@@ -10,7 +10,7 @@ from io import BytesIO
 import unicodedata
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide") # Layout wide để bảng rộng rãi hơn
+st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
 # --- KẾT NỐI GOOGLE APIS ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -23,14 +23,12 @@ def get_gs_client():
 
 # --- HÀM TIỆN ÍCH ---
 def remove_accents(input_str):
-    """Chuyển tiếng việt có dấu thành không dấu"""
     if not isinstance(input_str, str): return str(input_str)
     s = unicodedata.normalize('NFD', input_str)
     s = "".join([c for c in s if unicodedata.category(c) != 'Mn'])
     return s.replace("đ", "d").replace("Đ", "D")
 
 def auto_capitalize(text):
-    """Viết hoa chữ cái đầu tiên"""
     if not text or not isinstance(text, str): return ""
     text = text.strip()
     if len(text) > 0:
@@ -38,25 +36,63 @@ def auto_capitalize(text):
     return text
 
 def format_vnd(amount):
-    """Format tiền có dấu chấm: 1.000.000"""
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- HÀM XUẤT EXCEL (CẬP NHẬT MỚI) ---
+# --- HÀM XUẤT EXCEL (LOGIC NÂNG CAO) ---
 def convert_df_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_export = df.copy()
+        # 1. Chuẩn bị dữ liệu để tính toán
+        # Cần sắp xếp từ CŨ NHẤT -> MỚI NHẤT để tính dòng tiền lũy kế
+        df_calc = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
         
-        # 1. Xử lý dữ liệu trước khi xuất
+        # Tạo cột tính toán số dư (+ cho Thu, - cho Chi)
+        df_calc['SignedAmount'] = df_calc.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
+        
+        # Tính số dư lũy kế (Running Balance)
+        df_calc['RunningBalance'] = df_calc['SignedAmount'].cumsum()
+        
+        # Lấy số dư hiện tại (dòng cuối cùng)
+        current_balance = df_calc['RunningBalance'].iloc[-1] if not df_calc.empty else 0
+        
+        # --- XỬ LÝ LOGIC LỌC DỮ LIỆU ---
+        if current_balance == 0:
+            # TRƯỜNG HỢP 1: Số dư = 0 -> Ẩn các khoản Chi
+            df_export = df_calc[df_calc['Loai'] == 'Thu'].copy()
+        else:
+            # TRƯỜNG HỢP 2: Số dư != 0 -> Lấy từ điểm số dư = 0 gần nhất
+            # Tìm tất cả các điểm mà số dư = 0
+            zero_points = df_calc.index[df_calc['RunningBalance'] == 0].tolist()
+            
+            if zero_points:
+                # Nếu tìm thấy điểm = 0, lấy vị trí của điểm cuối cùng
+                last_zero_index = zero_points[-1]
+                
+                # Lấy vị trí dòng trong DataFrame (integer location)
+                # Cần reset index tạm thời để slice theo vị trí
+                df_temp = df_calc.reset_index(drop=True)
+                # Tìm lại vị trí index đó trong bảng temp
+                # (Logic: Lọc lấy các dòng nằm SAU dòng có RunningBalance=0 cuối cùng)
+                locs = df_temp.index[df_temp['RunningBalance'] == 0].tolist()
+                last_loc = locs[-1]
+                
+                # Cắt dữ liệu: Lấy từ dòng ngay sau dòng = 0
+                df_export = df_temp.iloc[last_loc + 1 : ].copy()
+            else:
+                # Nếu chưa từng bằng 0 lần nào, xuất toàn bộ
+                df_export = df_calc.copy()
+
+        # --- FORMAT DỮ LIỆU ĐỂ XUẤT ---
+        # Format ngày tháng
         if 'Ngay' in df_export.columns:
             df_export['Ngay'] = df_export['Ngay'].dt.strftime('%d/%m/%Y')
         
-        # Tự động viết hoa chữ cái đầu mô tả trong file Excel
+        # Viết hoa mô tả
         if 'MoTa' in df_export.columns:
             df_export['MoTa'] = df_export['MoTa'].apply(auto_capitalize)
 
-        # 2. Chọn cột và Đổi tên cột (In Hoa, Tiếng Việt)
+        # Chọn cột và đổi tên
         cols_to_keep = ['Ngay', 'Loai', 'SoTien', 'MoTa', 'HinhAnh']
         cols_final = [c for c in cols_to_keep if c in df_export.columns]
         df_final = df_export[cols_final]
@@ -70,10 +106,10 @@ def convert_df_to_excel(df):
         }
         df_final.rename(columns=rename_map, inplace=True)
         
-        # 3. Xuất file
+        # Xuất file
         df_final.to_excel(writer, index=False, sheet_name='QuyetToan')
         
-        # 4. Format Excel
+        # Trang trí Excel
         workbook = writer.book
         worksheet = writer.sheets['QuyetToan']
         
@@ -81,16 +117,14 @@ def convert_df_to_excel(df):
         cell_fmt = workbook.add_format({'border': 1, 'valign': 'top'})
         money_fmt = workbook.add_format({'border': 1, 'valign': 'top', 'num_format': '#,##0'})
         
-        # Apply Header Format
         for col_num, value in enumerate(df_final.columns.values):
             worksheet.write(0, col_num, value, header_fmt)
             
-        # Apply Column Width & Body Format
-        worksheet.set_column('A:A', 15, cell_fmt) # Ngày
-        worksheet.set_column('B:B', 10, cell_fmt) # Loại
-        worksheet.set_column('C:C', 15, money_fmt) # Tiền
-        worksheet.set_column('D:D', 40, cell_fmt) # Mô tả
-        worksheet.set_column('E:E', 25, cell_fmt) # Ảnh
+        worksheet.set_column('A:A', 15, cell_fmt)
+        worksheet.set_column('B:B', 10, cell_fmt)
+        worksheet.set_column('C:C', 15, money_fmt)
+        worksheet.set_column('D:D', 40, cell_fmt)
+        worksheet.set_column('E:E', 25, cell_fmt)
         
     return output.getvalue()
 
@@ -146,7 +180,6 @@ def delete_transaction(row_idx):
 # Load Data
 df = load_data_with_index()
 
-# Tính toán Dashboard
 total_thu = 0
 total_chi = 0
 balance = 0
@@ -155,7 +188,7 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-# CSS Tùy chỉnh (Giúp nút bấm đẹp hơn)
+# CSS
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] { font-size: 24px; }
@@ -215,22 +248,16 @@ with tab1:
             else:
                 st.warning("Vui lòng nhập Tiền > 0 và Mô tả.")
 
-# ================= TAB 2: SỬA / XÓA (GIAO DIỆN MỚI) =================
+# ================= TAB 2: SỬA / XÓA =================
 with tab2:
     if not df.empty:
-        # State để quản lý dòng đang sửa
         if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
-
-        # Sắp xếp mới nhất lên đầu
         df_sorted = df.sort_values(by='Ngay', ascending=False)
         
-        # --- KHUNG CHỈNH SỬA (Hiện ra khi bấm nút Sửa) ---
         if st.session_state.edit_row_index is not None:
-            # Lấy dữ liệu dòng đang chọn
             row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
             if not row_to_edit.empty:
                 row_data = row_to_edit.iloc[0]
-                
                 st.info(f"✏️ Đang sửa: **{row_data['MoTa']}** ({row_data['Ngay'].strftime('%d/%m')})")
                 with st.container(border=True):
                     with st.form("update_form"):
@@ -240,101 +267,70 @@ with tab2:
                         ud_type = ec2.selectbox("Loại", ["Chi", "Thu"], index=idx_type)
                         ud_amt = st.number_input("Số tiền", min_value=0, step=1000, value=int(row_data['SoTien']))
                         ud_desc = st.text_input("Mô tả", value=row_data['MoTa'])
-                        
-                        # Nút Save / Cancel
                         cb1, cb2 = st.columns(2)
                         if cb1.form_submit_button("💾 Cập nhật", type="primary", use_container_width=True):
                             update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
-                            st.session_state.edit_row_index = None # Thoát chế độ sửa
+                            st.session_state.edit_row_index = None
                             st.success("Cập nhật xong!")
                             st.rerun()
-                            
                         if cb2.form_submit_button("❌ Hủy bỏ", type="secondary", use_container_width=True):
                             st.session_state.edit_row_index = None
                             st.rerun()
                 st.divider()
 
-        # --- DANH SÁCH TOÀN BỘ (DẠNG BẢNG CÓ NÚT BẤM) ---
         st.write(f"**Danh sách giao dịch ({len(df)})**")
-        
-        # Tiêu đề bảng
         h1, h2, h3, h4, h5, h6 = st.columns([2, 1, 2, 4, 1, 2])
-        h1.markdown("**Ngày**")
-        h2.markdown("**Loại**")
-        h3.markdown("**Số Tiền**")
-        h4.markdown("**Mô Tả**")
-        h5.markdown("**Ảnh**")
-        h6.markdown("**Thao tác**")
+        h1.markdown("**Ngày**"); h2.markdown("**Loại**"); h3.markdown("**Số Tiền**"); h4.markdown("**Mô Tả**"); h5.markdown("**Ảnh**"); h6.markdown("**Thao tác**")
         st.divider()
 
-        # Lặp qua từng dòng để vẽ giao diện
         for index, row in df_sorted.iterrows():
             c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 2, 4, 1, 2], gap="small")
-            
             c1.write(row['Ngay'].strftime('%d/%m/%Y'))
-            
-            # Tô màu loại
             if row['Loai'] == 'Thu':
                 c2.markdown(f"<span style='color:green; font-weight:bold'>Thu</span>", unsafe_allow_html=True)
             else:
                 c2.write("Chi")
-                
             c3.write(f"**{format_vnd(row['SoTien'])}**")
             c4.write(row['MoTa'])
-            
-            if row['HinhAnh']:
-                c5.markdown(f"[Xem]({row['HinhAnh']})")
-            else:
-                c5.write("-")
-            
-            # Nút thao tác
+            if row['HinhAnh']: c5.markdown(f"[Xem]({row['HinhAnh']})")
+            else: c5.write("-")
             with c6:
                 bc1, bc2 = st.columns(2)
-                # Nút Sửa
-                if bc1.button("✏️", key=f"edit_{row['Row_Index']}", help="Sửa dòng này"):
+                if bc1.button("✏️", key=f"edit_{row['Row_Index']}"):
                     st.session_state.edit_row_index = row['Row_Index']
                     st.rerun()
-                
-                # Nút Xóa
-                if bc2.button("🗑️", key=f"del_{row['Row_Index']}", help="Xóa dòng này"):
+                if bc2.button("🗑️", key=f"del_{row['Row_Index']}"):
                     delete_transaction(row['Row_Index'])
                     st.toast(f"Đã xóa: {row['MoTa']}")
                     time.sleep(1)
                     st.rerun()
-            
             st.markdown("<hr style='margin: 5px 0; border-top: 1px dashed #eee;'>", unsafe_allow_html=True)
-
     else:
         st.info("Chưa có giao dịch nào.")
 
 # ================= TAB 3: XUẤT EXCEL =================
 with tab3:
-    st.subheader("📥 Tải Báo Cáo")
+    st.subheader("📥 Tải Báo Cáo Quyết Toán")
     if not df.empty:
-        # Tên file theo yêu cầu: "Quyết toán" + ngày tải + giờ tải
-        # Lưu ý: Filename nên không dấu để an toàn, nhưng hiển thị vẫn hiểu được
-        # Format: Quyet_toan_30012026_1730.xlsx
-        
         current_time = datetime.now()
         file_name_download = f"Quyet_toan_{current_time.strftime('%d%m%Y_%H%M')}.xlsx"
         
+        # Gọi hàm xuất Excel với logic mới
         excel_data = convert_df_to_excel(df)
+        
+        st.info("Logic xuất file: Nếu số dư hiện tại = 0, ẩn các khoản Chi. Nếu số dư != 0, chỉ xuất dữ liệu từ lần số dư = 0 gần nhất.")
         
         col_dl1, col_dl2 = st.columns([2, 1])
         with col_dl1:
-            st.info(f"Sẵn sàng tải xuống: **{file_name_download}**")
+            st.success(f"File sẵn sàng: **{file_name_download}**")
         with col_dl2:
             st.download_button(
-                label="📥 TẢI FILE EXCEL",
+                label="📥 TẢI FILE NGAY",
                 data=excel_data,
                 file_name=file_name_download,
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 use_container_width=True,
                 type="primary"
             )
-            
-        # Preview bảng (Chỉ xem)
-        st.write("Xem trước dữ liệu sẽ xuất:")
-        st.dataframe(df.sort_values(by='Ngay', ascending=False).head(5), hide_index=True)
     else:
-        st.warning("Chưa có dữ liệu để xuất file.")
+        st.warning("Chưa có dữ liệu.")
