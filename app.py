@@ -11,6 +11,16 @@ import unicodedata
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            /* Ẩn nút Manage App ở góc dưới nếu có */
+            .stDeployButton {display:none;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- KẾT NỐI GOOGLE APIS ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -368,3 +378,4 @@ with tab3:
                         )
     else:
         st.info("Chưa có dữ liệu nào trong hệ thống.")
+
