@@ -47,7 +47,7 @@ def ai_scan_bill(image):
     """Dùng Gemini để đọc hóa đơn"""
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-pro')
         
         prompt = """
         Phân tích hình ảnh hóa đơn này và trả về kết quả JSON thuần túy (không markdown) với 3 trường:
@@ -130,4 +130,5 @@ if not df.empty:
     st.dataframe(summary.style.format("{:,.0f}"), use_container_width=True)
     st.bar_chart(summary[['Thu', 'Chi']])
 else:
+
     st.info("Chưa có dữ liệu nào.")
