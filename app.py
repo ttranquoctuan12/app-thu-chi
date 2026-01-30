@@ -7,7 +7,6 @@ from googleapiclient.http import MediaIoBaseUpload
 from datetime import datetime
 import time
 from io import BytesIO
-import unicodedata # <--- Thư viện mới để xử lý tiếng Việt
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="centered")
@@ -21,19 +20,21 @@ def get_creds():
 def get_gs_client():
     return gspread.authorize(get_creds())
 
-# --- HÀM XỬ LÝ TIẾNG VIỆT (BỎ DẤU) ---
-def remove_accents(input_str):
-    if not isinstance(input_str, str): return str(input_str)
-    s = unicodedata.normalize('NFD', input_str)
-    s = "".join([c for c in s if unicodedata.category(c) != 'Mn'])
-    return s.replace("đ", "d").replace("Đ", "D")
+# --- HÀM XỬ LÝ VĂN BẢN (VIẾT HOA CHỮ CÁI ĐẦU) ---
+def auto_capitalize(text):
+    if not text: return ""
+    text = str(text).strip()
+    if len(text) > 0:
+        # Chỉ viết hoa chữ cái đầu tiên, giữ nguyên các chữ phía sau (để bảo tồn tên riêng)
+        return text[0].upper() + text[1:]
+    return text
 
 # --- HÀM FORMAT TIỀN (DẤU CHẤM) ---
 def format_vnd(amount):
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- HÀM XUẤT EXCEL (BỎ DẤU TIÊU ĐỀ + IN ĐẬM) ---
+# --- HÀM XUẤT EXCEL (TIẾNG VIỆT CÓ DẤU + IN HOA) ---
 def convert_df_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -43,17 +44,49 @@ def convert_df_to_excel(df):
         if 'Ngay' in df_export.columns:
             df_export['Ngay'] = df_export['Ngay'].dt.strftime('%d/%m/%Y')
             
-        # 2. Đổi tên cột: Bỏ dấu tiếng Việt (VD: Số Tiền -> So Tien)
-        new_columns = {col: remove_accents(col) for col in df_export.columns}
-        df_export.rename(columns=new_columns, inplace=True)
+        # 2. Chọn cột cần xuất và đổi tên thành Tiếng Việt IN HOA
+        # Chỉ lấy 5 cột quan trọng, bỏ qua Row_Index và Label
+        cols_to_keep = ['Ngay', 'Loai', 'SoTien', 'MoTa', 'HinhAnh']
+        # Kiểm tra xem đủ cột không để tránh lỗi
+        cols_to_export = [c for c in cols_to_keep if c in df_export.columns]
+        df_final = df_export[cols_to_export]
         
-        # 3. Xuất file (Pandas mặc định đã in đậm tiêu đề)
-        df_export.to_excel(writer, index=False, sheet_name='SoThuChi')
+        # Đổi tên cột
+        rename_map = {
+            'Ngay': 'NGÀY',
+            'Loai': 'LOẠI',
+            'SoTien': 'SỐ TIỀN',
+            'MoTa': 'MÔ TẢ',
+            'HinhAnh': 'HÌNH ẢNH'
+        }
+        df_final.rename(columns=rename_map, inplace=True)
         
-        # Tùy chỉnh thêm độ rộng cột cho đẹp
+        # 3. Xuất file
+        df_final.to_excel(writer, index=False, sheet_name='SoThuChi')
+        
+        # 4. Trang trí (Format Excel)
         workbook = writer.book
         worksheet = writer.sheets['SoThuChi']
-        worksheet.set_column('A:E', 15) # Set độ rộng cột
+        
+        # Định dạng tiêu đề: In đậm, nền xám nhạt, viền đen (Pandas mặc định đã In đậm)
+        header_format = workbook.add_format({
+            'bold': True,
+            'text_wrap': True,
+            'valign': 'top',
+            'fg_color': '#D7E4BC',
+            'border': 1
+        })
+        
+        # Ghi đè định dạng tiêu đề
+        for col_num, value in enumerate(df_final.columns.values):
+            worksheet.write(0, col_num, value, header_format)
+            
+        # Chỉnh độ rộng cột
+        worksheet.set_column('A:A', 15) # Ngày
+        worksheet.set_column('B:B', 10) # Loại
+        worksheet.set_column('C:C', 15) # Số tiền
+        worksheet.set_column('D:D', 40) # Mô tả (Rộng nhất)
+        worksheet.set_column('E:E', 20) # Hình ảnh
         
     return output.getvalue()
 
@@ -92,14 +125,22 @@ def load_data_with_index():
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
-    sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), description, image_link])
+    
+    # Tự động viết hoa chữ cái đầu
+    final_desc = auto_capitalize(description)
+    
+    sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), final_desc, image_link])
 
 def update_transaction(row_idx, date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     r_idx = int(row_idx)
     amt = int(amount)
-    sheet.update(f"A{r_idx}:E{r_idx}", [[date.strftime('%Y-%m-%d'), category, amt, description, image_link]])
+    
+    # Tự động viết hoa chữ cái đầu
+    final_desc = auto_capitalize(description)
+    
+    sheet.update(f"A{r_idx}:E{r_idx}", [[date.strftime('%Y-%m-%d'), category, amt, final_desc, image_link]])
 
 def delete_transaction(row_idx):
     client = get_gs_client()
@@ -168,6 +209,7 @@ with tab1:
                     if img_data:
                         fname = f"{d_date.strftime('%Y%m%d')}_{d_desc}.jpg"
                         link = upload_image_to_drive(img_data, fname)
+                    # Hàm add_transaction đã tự động viết hoa mô tả bên trong
                     add_transaction(d_date, d_type, d_amount, d_desc, link)
                 
                 st.success("✅ Đã lưu!")
@@ -205,6 +247,7 @@ with tab2:
             
             c_btn1, c_btn2 = st.columns(2)
             if c_btn1.form_submit_button("💾 Cập nhật", type="primary", use_container_width=True):
+                # Hàm update cũng sẽ tự động viết hoa mô tả
                 update_transaction(selected_row['Row_Index'], e_date, e_type, e_amount, e_desc, e_link)
                 st.success("Đã cập nhật!")
                 time.sleep(1)
@@ -243,15 +286,13 @@ with tab3:
         
         # 2. Hàm tô màu cho dòng "Thu"
         def highlight_thu(row):
-            # Nếu là 'Thu' -> Nền xanh nhạt, Chữ xanh đậm, In đậm
             if row['Loai'] == 'Thu':
                 return ['background-color: #d4edda; color: #155724; font-weight: bold'] * len(row)
-            # Nếu là 'Chi' -> Không làm gì cả
             return [''] * len(row)
 
         # 3. Áp dụng Style và Cấu hình cột
         st.dataframe(
-            df_view.style.apply(highlight_thu, axis=1), # <--- Áp dụng tô màu tại đây
+            df_view.style.apply(highlight_thu, axis=1),
             column_config={
                 "HinhAnh": st.column_config.LinkColumn("Ảnh", display_text="Xem"),
                 "SoTien_HienThi": st.column_config.TextColumn("Số Tiền"),
