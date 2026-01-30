@@ -119,3 +119,120 @@ st.markdown(f"""
             <span style="color: #27ae60;">⬇️ Tổng Thu: <b>{thu_str}</b></span>
             <span style="color: #c0392b;">⬆️ Tổng Chi: <b>{chi_str}</b></span>
         </div>
+    </div>
+""", unsafe_allow_html=True)
+
+# TABS
+tab1, tab2, tab3 = st.tabs(["➕ Nhập Mới", "🛠️ Sửa / Xóa", "📋 Danh Sách & Xuất File"])
+
+# --- TAB 1: NHẬP MỚI ---
+with tab1:
+    with st.container(border=True):
+        if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
+        if 'new_desc' not in st.session_state: st.session_state.new_desc = ""
+
+        c1, c2 = st.columns(2)
+        d_date = c1.date_input("Ngày giao dịch", datetime.now(), key="d_new")
+        d_type = c2.selectbox("Loại giao dịch", ["Chi", "Thu"], key="t_new")
+        
+        d_amount = st.number_input("Số tiền (VNĐ)", min_value=0, step=1000, value=st.session_state.new_amount, key="a_new")
+        d_desc = st.text_input("Nội dung / Mô tả (Bắt buộc)", value=st.session_state.new_desc, key="desc_new")
+        
+        st.caption("Hình ảnh (Tùy chọn)")
+        img_opt = st.radio("Nguồn ảnh:", ["Không", "Chụp ảnh", "Tải ảnh"], horizontal=True, key="img_new_opt")
+        img_data = None
+        if img_opt == "Chụp ảnh": img_data = st.camera_input("Camera", key="cam_new")
+        elif img_opt == "Tải ảnh": img_data = st.file_uploader("Upload", type=['jpg','png','jpeg'], key="up_new")
+
+        if st.button("Lưu Giao Dịch", type="primary", use_container_width=True):
+            if d_amount > 0 and d_desc.strip() != "":
+                with st.spinner("Đang xử lý..."):
+                    link = ""
+                    if img_data:
+                        fname = f"{d_date.strftime('%Y%m%d')}_{d_desc}.jpg"
+                        link = upload_image_to_drive(img_data, fname)
+                    add_transaction(d_date, d_type, d_amount, d_desc, link)
+                
+                st.success("✅ Đã lưu!")
+                st.session_state.new_amount = 0
+                st.session_state.new_desc = ""
+                time.sleep(1)
+                st.rerun()
+            elif d_amount <= 0:
+                st.warning("⚠️ Tiền phải > 0")
+            elif d_desc.strip() == "":
+                st.warning("⚠️ Thiếu mô tả")
+
+# --- TAB 2: SỬA / XÓA ---
+with tab2:
+    if not df.empty:
+        df['Label'] = df.apply(lambda x: f"{x['Ngay'].strftime('%d/%m')} - {x['MoTa']} ({format_vnd(x['SoTien'])})", axis=1)
+        df_sorted = df.sort_values(by='Ngay', ascending=False)
+        
+        st.write("🔍 **Tìm giao dịch:**")
+        selected_label = st.selectbox("Chọn từ danh sách", df_sorted['Label'].tolist())
+        selected_row = df_sorted[df_sorted['Label'] == selected_label].iloc[0]
+        
+        st.divider()
+        with st.form("edit_form"):
+            col_e1, col_e2 = st.columns(2)
+            e_date = col_e1.date_input("Ngày", value=selected_row['Ngay'])
+            type_idx = 0 if selected_row['Loai'] == "Chi" else 1
+            e_type = col_e2.selectbox("Loại", ["Chi", "Thu"], index=type_idx)
+            
+            e_amount = st.number_input("Số tiền", min_value=0, step=1000, value=int(selected_row['SoTien']))
+            e_desc = st.text_input("Nội dung / Mô tả", value=selected_row['MoTa'])
+            e_link = selected_row['HinhAnh'] 
+            
+            if e_link: st.caption(f"[Xem ảnh hiện tại]({e_link})")
+            
+            c_btn1, c_btn2 = st.columns(2)
+            if c_btn1.form_submit_button("💾 Cập nhật", type="primary", use_container_width=True):
+                update_transaction(selected_row['Row_Index'], e_date, e_type, e_amount, e_desc, e_link)
+                st.success("Đã cập nhật!")
+                time.sleep(1)
+                st.rerun()
+            
+            if c_btn2.form_submit_button("🗑️ Xóa vĩnh viễn", type="secondary", use_container_width=True):
+                delete_transaction(selected_row['Row_Index'])
+                st.warning("Đã xóa!")
+                time.sleep(1)
+                st.rerun()
+    else:
+        st.info("Chưa có dữ liệu.")
+
+# --- TAB 3: DANH SÁCH & EXCEL ---
+with tab3:
+    col_head1, col_head2 = st.columns([3, 1])
+    with col_head1:
+        st.subheader("📋 Chi tiết giao dịch")
+    
+    if not df.empty:
+        # --- NÚT XUẤT EXCEL (ĐÃ CÓ LẠI) ---
+        with col_head2:
+            excel_data = convert_df_to_excel(df)
+            st.download_button(
+                label="📥 Tải Excel",
+                data=excel_data,
+                file_name=f'SoThuChi_{datetime.now().strftime("%d%m%Y")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+
+        df_view = df.sort_values(by='Ngay', ascending=False).copy()
+        df_view['SoTien_HienThi'] = df_view['SoTien'].apply(lambda x: format_vnd(x) + " đ")
+        
+        st.dataframe(
+            df_view,
+            column_config={
+                "HinhAnh": st.column_config.LinkColumn("Ảnh", display_text="Xem"),
+                "SoTien_HienThi": st.column_config.TextColumn("Số Tiền"),
+                "Ngay": st.column_config.DateColumn("Ngày", format="DD/MM/YYYY"),
+                "MoTa": st.column_config.TextColumn("Nội dung", width="medium"),
+                "Loai": st.column_config.TextColumn("Loại", width="small")
+            },
+            column_order=["Ngay", "MoTa", "SoTien_HienThi", "Loai", "HinhAnh"],
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("Chưa có dữ liệu.")
