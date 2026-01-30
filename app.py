@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import time
 from io import BytesIO
 import unicodedata
@@ -39,79 +39,70 @@ def format_vnd(amount):
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- HÀM XUẤT EXCEL (LOGIC NÂNG CAO) ---
-def convert_df_to_excel(df):
+# --- HÀM XỬ LÝ LOGIC DỮ LIỆU ---
+def get_settlement_data(df):
+    """Logic 1: Quyết toán theo số dư"""
+    # Sắp xếp từ cũ đến mới để tính dòng tiền
+    df_calc = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
+    
+    # Tính số dư lũy kế
+    df_calc['SignedAmount'] = df_calc.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
+    df_calc['RunningBalance'] = df_calc['SignedAmount'].cumsum()
+    
+    current_balance = df_calc['RunningBalance'].iloc[-1] if not df_calc.empty else 0
+    
+    if current_balance == 0:
+        # Nếu số dư = 0: Chỉ lấy Thu (ẩn Chi đã thanh toán xong)
+        return df_calc[df_calc['Loai'] == 'Thu'].copy()
+    else:
+        # Nếu số dư != 0: Lấy từ điểm = 0 gần nhất
+        zero_points = df_calc.index[df_calc['RunningBalance'] == 0].tolist()
+        if zero_points:
+            last_zero_index = zero_points[-1]
+            # Cần map lại index của df_calc (vốn đã sort) để cắt đúng vị trí
+            # Reset index để dùng iloc cắt dòng
+            df_temp = df_calc.reset_index(drop=True)
+            locs = df_temp.index[df_temp['RunningBalance'] == 0].tolist()
+            last_loc = locs[-1]
+            return df_temp.iloc[last_loc + 1 : ].copy()
+        else:
+            return df_calc.copy()
+
+def get_history_data(df, start_date, end_date):
+    """Logic 2: Truy vấn theo ngày"""
+    mask = (df['Ngay'].dt.date >= start_date) & (df['Ngay'].dt.date <= end_date)
+    return df.loc[mask].sort_values(by='Ngay', ascending=True).copy()
+
+# --- HÀM XUẤT EXCEL (CHỈ FORMAT, KHÔNG TÍNH TOÁN) ---
+def convert_df_to_excel(df, sheet_name="BaoCao"):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # 1. Chuẩn bị dữ liệu để tính toán
-        # Cần sắp xếp từ CŨ NHẤT -> MỚI NHẤT để tính dòng tiền lũy kế
-        df_calc = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
+        df_export = df.copy()
         
-        # Tạo cột tính toán số dư (+ cho Thu, - cho Chi)
-        df_calc['SignedAmount'] = df_calc.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
-        
-        # Tính số dư lũy kế (Running Balance)
-        df_calc['RunningBalance'] = df_calc['SignedAmount'].cumsum()
-        
-        # Lấy số dư hiện tại (dòng cuối cùng)
-        current_balance = df_calc['RunningBalance'].iloc[-1] if not df_calc.empty else 0
-        
-        # --- XỬ LÝ LOGIC LỌC DỮ LIỆU ---
-        if current_balance == 0:
-            # TRƯỜNG HỢP 1: Số dư = 0 -> Ẩn các khoản Chi
-            df_export = df_calc[df_calc['Loai'] == 'Thu'].copy()
-        else:
-            # TRƯỜNG HỢP 2: Số dư != 0 -> Lấy từ điểm số dư = 0 gần nhất
-            # Tìm tất cả các điểm mà số dư = 0
-            zero_points = df_calc.index[df_calc['RunningBalance'] == 0].tolist()
-            
-            if zero_points:
-                # Nếu tìm thấy điểm = 0, lấy vị trí của điểm cuối cùng
-                last_zero_index = zero_points[-1]
-                
-                # Lấy vị trí dòng trong DataFrame (integer location)
-                # Cần reset index tạm thời để slice theo vị trí
-                df_temp = df_calc.reset_index(drop=True)
-                # Tìm lại vị trí index đó trong bảng temp
-                # (Logic: Lọc lấy các dòng nằm SAU dòng có RunningBalance=0 cuối cùng)
-                locs = df_temp.index[df_temp['RunningBalance'] == 0].tolist()
-                last_loc = locs[-1]
-                
-                # Cắt dữ liệu: Lấy từ dòng ngay sau dòng = 0
-                df_export = df_temp.iloc[last_loc + 1 : ].copy()
-            else:
-                # Nếu chưa từng bằng 0 lần nào, xuất toàn bộ
-                df_export = df_calc.copy()
-
-        # --- FORMAT DỮ LIỆU ĐỂ XUẤT ---
-        # Format ngày tháng
+        # 1. Chuẩn hóa dữ liệu hiển thị
         if 'Ngay' in df_export.columns:
             df_export['Ngay'] = df_export['Ngay'].dt.strftime('%d/%m/%Y')
         
-        # Viết hoa mô tả
         if 'MoTa' in df_export.columns:
             df_export['MoTa'] = df_export['MoTa'].apply(auto_capitalize)
 
-        # Chọn cột và đổi tên
+        # 2. Chọn cột
         cols_to_keep = ['Ngay', 'Loai', 'SoTien', 'MoTa', 'HinhAnh']
         cols_final = [c for c in cols_to_keep if c in df_export.columns]
         df_final = df_export[cols_final]
         
         rename_map = {
-            'Ngay': 'NGÀY',
-            'Loai': 'LOẠI',
-            'SoTien': 'SỐ TIỀN',
-            'MoTa': 'MÔ TẢ',
-            'HinhAnh': 'HÌNH ẢNH'
+            'Ngay': 'NGÀY', 'Loai': 'LOẠI', 'SoTien': 'SỐ TIỀN',
+            'MoTa': 'MÔ TẢ', 'HinhAnh': 'HÌNH ẢNH'
         }
         df_final.rename(columns=rename_map, inplace=True)
         
-        # Xuất file
-        df_final.to_excel(writer, index=False, sheet_name='QuyetToan')
+        # 3. Xuất file
+        df_final.to_excel(writer, index=False, sheet_name=sheet_name)
         
-        # Trang trí Excel
+        # 4. Format Styles
         workbook = writer.book
-        worksheet = writer.sheets['QuyetToan']
+        worksheet = writer.sheets[sheet_name]
         
         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
         cell_fmt = workbook.add_format({'border': 1, 'valign': 'top'})
@@ -177,7 +168,6 @@ def delete_transaction(row_idx):
 
 # ================= GIAO DIỆN CHÍNH =================
 
-# Load Data
 df = load_data_with_index()
 
 total_thu = 0
@@ -188,7 +178,6 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-# CSS
 st.markdown("""
 <style>
     div[data-testid="stMetricValue"] { font-size: 24px; }
@@ -226,7 +215,6 @@ with tab1:
         d_amount = st.number_input("Số tiền", min_value=0, step=1000, value=st.session_state.new_amount, key="a_new")
         d_desc = st.text_input("Mô tả (Bắt buộc)", value=st.session_state.new_desc, key="desc_new")
         
-        st.caption("Hình ảnh (Tùy chọn)")
         img_opt = st.radio("Nguồn ảnh:", ["Không", "Chụp", "Tải"], horizontal=True, key="img_new_opt", label_visibility="collapsed")
         img_data = None
         if img_opt == "Chụp": img_data = st.camera_input("Camera", key="cam_new")
@@ -308,29 +296,75 @@ with tab2:
     else:
         st.info("Chưa có giao dịch nào.")
 
-# ================= TAB 3: XUẤT EXCEL =================
+# ================= TAB 3: XUẤT EXCEL (NÂNG CẤP) =================
 with tab3:
-    st.subheader("📥 Tải Báo Cáo Quyết Toán")
+    st.subheader("📥 Tải Báo Cáo")
+
     if not df.empty:
-        current_time = datetime.now()
-        file_name_download = f"Quyet_toan_{current_time.strftime('%d%m%Y_%H%M')}.xlsx"
+        # Chọn chế độ xuất báo cáo
+        report_mode = st.radio(
+            "Chọn loại báo cáo muốn xuất:",
+            ["🚀 Quyết Toán Hiện Tại (Thông minh)", "🗓️ Truy Vấn Lịch Sử (Từ ngày - Đến ngày)"],
+            horizontal=False
+        )
         
-        # Gọi hàm xuất Excel với logic mới
-        excel_data = convert_df_to_excel(df)
+        st.divider()
         
-        st.info("Logic xuất file: Nếu số dư hiện tại = 0, ẩn các khoản Chi. Nếu số dư != 0, chỉ xuất dữ liệu từ lần số dư = 0 gần nhất.")
-        
-        col_dl1, col_dl2 = st.columns([2, 1])
-        with col_dl1:
-            st.success(f"File sẵn sàng: **{file_name_download}**")
-        with col_dl2:
-            st.download_button(
-                label="📥 TẢI FILE NGAY",
-                data=excel_data,
-                file_name=file_name_download,
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                use_container_width=True,
-                type="primary"
-            )
+        # --- CHẾ ĐỘ 1: QUYẾT TOÁN ---
+        if "Quyết Toán" in report_mode:
+            st.markdown("""
+            **Logic xử lý:**
+            * Nếu số dư hiện tại = 0: Ẩn các khoản Chi đã thanh toán, chỉ hiện Thu.
+            * Nếu số dư != 0: Chỉ xuất các giao dịch phát sinh sau lần "sạch nợ" gần nhất.
+            """)
+            
+            if st.button("Tạo File Quyết Toán", type="primary"):
+                # Lọc dữ liệu theo Logic 1
+                df_export = get_settlement_data(df)
+                
+                # Tạo file
+                current_time = datetime.now()
+                file_name = f"Quyet_toan_{current_time.strftime('%d%m%Y_%H%M')}.xlsx"
+                excel_data = convert_df_to_excel(df_export, sheet_name="QuyetToan")
+                
+                st.download_button(
+                    label=f"📥 TẢI VỀ: {file_name}",
+                    data=excel_data,
+                    file_name=file_name,
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    type="primary"
+                )
+                
+        # --- CHẾ ĐỘ 2: TRUY VẤN LỊCH SỬ ---
+        else:
+            c_date1, c_date2 = st.columns(2)
+            # Mặc định lấy từ đầu tháng đến hiện tại
+            today = datetime.now().date()
+            start_of_month = today.replace(day=1)
+            
+            start_d = c_date1.date_input("Từ ngày", value=start_of_month)
+            end_d = c_date2.date_input("Đến ngày", value=today)
+            
+            if st.button("Tạo File Lịch Sử", type="primary"):
+                if start_d > end_d:
+                    st.error("Ngày bắt đầu không được lớn hơn ngày kết thúc!")
+                else:
+                    # Lọc dữ liệu theo Logic 2
+                    df_history = get_history_data(df, start_d, end_d)
+                    
+                    if df_history.empty:
+                        st.warning("Không tìm thấy giao dịch nào trong khoảng thời gian này.")
+                    else:
+                        file_name = f"Lich_su_{start_d.strftime('%d%m')}_to_{end_d.strftime('%d%m')}.xlsx"
+                        excel_data = convert_df_to_excel(df_history, sheet_name="LichSu")
+                        
+                        st.success(f"Tìm thấy {len(df_history)} giao dịch.")
+                        st.download_button(
+                            label=f"📥 TẢI VỀ: {file_name}",
+                            data=excel_data,
+                            file_name=file_name,
+                            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            type="primary"
+                        )
     else:
-        st.warning("Chưa có dữ liệu.")
+        st.info("Chưa có dữ liệu nào trong hệ thống.")
