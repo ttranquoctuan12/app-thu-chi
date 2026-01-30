@@ -53,7 +53,6 @@ def upload_image_to_drive(image_file, file_name):
 
 # --- CÁC HÀM XỬ LÝ DỮ LIỆU (CRUD) ---
 def load_data_with_index():
-    """Tải dữ liệu kèm số dòng để sửa/xóa"""
     try:
         client = get_gs_client()
         sheet = client.open("QuanLyThuChi").worksheet("data")
@@ -61,13 +60,19 @@ def load_data_with_index():
         if not data: return pd.DataFrame()
         
         df = pd.DataFrame(data)
-        # Row Index bắt đầu từ 2 (do dòng 1 là tiêu đề)
+        # Tạo Row Index
         df['Row_Index'] = range(2, len(df) + 2)
+        
+        # Xử lý ngày tháng
         df['Ngay'] = pd.to_datetime(df['Ngay'], errors='coerce')
-        # Chuyển tiền sang số nguyên để tính toán
-        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype(int)
+        
+        # QUAN TRỌNG: Chuyển đổi Số Tiền sang kiểu số thực (float) rồi về int chuẩn của Python
+        # Lệnh này giúp tránh lỗi int64 khi hiển thị
+        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('int64')
+        
         return df
-    except:
+    except Exception as e:
+        # st.error(f"Lỗi tải dữ liệu: {e}") # Bật dòng này nếu muốn xem lỗi chi tiết
         return pd.DataFrame()
 
 def add_transaction(date, category, amount, description, image_link):
@@ -84,17 +89,22 @@ def add_transaction(date, category, amount, description, image_link):
 def update_transaction(row_idx, date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
-    # Cập nhật range A:E tại dòng chỉ định
+    
+    # --- SỬA LỖI Ở ĐÂY: Thêm int(...) ---
+    r_idx = int(row_idx)      # Chuyển numpy.int64 thành int thường
+    amt = int(amount)         # Chuyển số tiền thành int thường
+    
     sheet.update(
-        f"A{row_idx}:E{row_idx}", 
-        [[date.strftime('%Y-%m-%d'), category, int(amount), description, image_link]]
+        f"A{r_idx}:E{r_idx}", 
+        [[date.strftime('%Y-%m-%d'), category, amt, description, image_link]]
     )
 
 def delete_transaction(row_idx):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
-    sheet.delete_rows(row_idx)
-
+    
+    # --- SỬA LỖI Ở ĐÂY: Thêm int(...) ---
+    sheet.delete_rows(int(row_idx))
 # ================= GIAO DIỆN CHÍNH =================
 st.title("💎 Quản Lý Thu Chi")
 
@@ -253,3 +263,4 @@ with tab3:
         )
     else:
         st.info("Chưa có dữ liệu.")
+
