@@ -60,61 +60,114 @@ def format_vnd(amount):
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- XỬ LÝ DỮ LIỆU ---
+# --- XỬ LÝ DỮ LIỆU CHUẨN KẾ TOÁN (FIX LỖI GỘP & SỐ DƯ) ---
 def process_report_data(df, start_date=None, end_date=None):
+    if df.empty: return pd.DataFrame()
+
+    # 1. Sắp xếp toàn bộ dữ liệu (Bảo đảm thứ tự nhập liệu Row_Index được tôn trọng)
+    df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
+    
+    # 2. Tính số dư lũy kế trên TOÀN BỘ lịch sử (Không được lọc trước khi tính)
+    df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
+    df_all['ConLai'] = df_all['SignedAmount'].cumsum()
+
+    # 3. Lọc dữ liệu theo kỳ báo cáo & Tính số dư đầu kỳ
     if start_date and end_date:
-        mask = (df['Ngay'].dt.date >= start_date) & (df['Ngay'].dt.date <= end_date)
-        df_proc = df.loc[mask].copy()
+        # Tách phần dữ liệu TRƯỚC ngày bắt đầu để lấy số dư đầu kỳ
+        mask_before = df_all['Ngay'].dt.date < start_date
+        df_before = df_all[mask_before]
+        
+        opening_balance = 0
+        if not df_before.empty:
+            opening_balance = df_before.iloc[-1]['ConLai']
+            
+        # Lấy dữ liệu TRONG kỳ
+        mask_in = (df_all['Ngay'].dt.date >= start_date) & (df_all['Ngay'].dt.date <= end_date)
+        df_proc = df_all[mask_in].copy()
+        
+        # Thêm dòng "Số dư đầu kỳ" vào đầu danh sách (Quan trọng)
+        # Tạo dòng dummy
+        row_open = {
+            'Row_Index': 0, 'Ngay': pd.Timestamp(start_date), 'Loai': 'Open',
+            'SoTien': 0, 'MoTa': f"Số dư đầu kỳ (Trước ngày {start_date.strftime('%d/%m')})", 
+            'HinhAnh': '', 'ConLai': opening_balance, 'SignedAmount': 0
+        }
+        df_open = pd.DataFrame([row_open])
+        
+        # Ghép dòng đầu kỳ vào bảng
+        df_proc = pd.concat([df_open, df_proc], ignore_index=True)
+            
     else:
-        df_proc = df.copy()
+        df_proc = df_all.copy()
 
     if df_proc.empty: return pd.DataFrame()
 
-    df_proc = df_proc.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True])
-    df_proc['SignedAmount'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
-    df_proc['ConLai'] = df_proc['SignedAmount'].cumsum()
-
+    # 4. Format cột hiển thị
     df_proc['STT'] = range(1, len(df_proc) + 1)
-    df_proc['Khoan'] = df_proc['MoTa'].apply(auto_capitalize)
-    df_proc['NgayChi'] = df_proc.apply(lambda x: x['Ngay'].strftime('%d/%m/%Y') if x['Loai'] == 'Chi' else "", axis=1)
-    df_proc['NgayNhan'] = df_proc.apply(lambda x: x['Ngay'].strftime('%d/%m/%Y') if x['Loai'] == 'Thu' else "", axis=1)
     
-    return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTien', 'ConLai', 'Loai']]
+    # Xử lý Mô tả
+    df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
+    
+    # Xử lý Ngày (Ẩn ngày dòng đầu kỳ)
+    def get_date_str(row):
+        if row['Loai'] == 'Open': return "" 
+        if pd.isna(row['Ngay']): return ""
+        return row['Ngay'].strftime('%d/%m/%Y')
 
-# --- EXCEL CUSTOM ---
+    df_proc['NgayChi'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Chi' else "", axis=1)
+    df_proc['NgayNhan'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Thu' else "", axis=1)
+    
+    # Với dòng 'Open', số tiền hiển thị là rỗng hoặc 0
+    df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
+
+    return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
+
+# --- EXCEL CUSTOM (BAO GỒM DÒNG SỐ DƯ ĐẦU KỲ) ---
 def convert_df_to_excel_custom(df_report):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        # (Định dạng giữ nguyên như cũ - đã rút gọn code để tập trung vào layout)
+        # Định dạng
         fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF'})
         fmt_normal = workbook.add_format({'border': 1})
         fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0'})
-        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True})
+        
+        # Định dạng đặc biệt
+        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True}) # Nền vàng
         fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0'})
+        fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True}) # Dòng đầu kỳ màu xám
+        fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0'})
+        
         fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True})
         fmt_orange = workbook.add_format({'border': 1, 'num_format': '#,##0', 'bg_color': '#FF9900', 'bold': True})
         
         worksheet = workbook.add_worksheet("SoQuy")
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
         for c, h in enumerate(headers): worksheet.write(0, c, h, fmt_header)
-        worksheet.set_column('B:B', 30); worksheet.set_column('E:F', 15)
+        worksheet.set_column('B:B', 35); worksheet.set_column('E:F', 15)
 
         for i, row in df_report.iterrows():
             r = i + 1
-            is_thu = (row['Loai'] == 'Thu')
+            loai = row['Loai']
             bal = row['ConLai']
             
-            c_fmt = fmt_thu_bg if is_thu else fmt_normal
-            m_fmt = fmt_thu_money if is_thu else fmt_money
-            if is_thu: bal_fmt = fmt_orange 
-            else: bal_fmt = fmt_red if bal < 0 else fmt_money
+            # Chọn style
+            if loai == 'Thu':
+                c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
+            elif loai == 'Open':
+                c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
+            else:
+                c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
 
             worksheet.write(r, 0, row['STT'], c_fmt)
             worksheet.write(r, 1, row['Khoan'], c_fmt)
             worksheet.write(r, 2, row['NgayChi'], c_fmt)
             worksheet.write(r, 3, row['NgayNhan'], c_fmt)
-            worksheet.write(r, 4, row['SoTien'], m_fmt)
+            
+            # Nếu là dòng đầu kỳ, cột Số Tiền để trống cho đẹp
+            if loai == 'Open': worksheet.write(r, 4, "", m_fmt)
+            else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
+            
             worksheet.write(r, 5, bal, bal_fmt)
             
         # Tổng footer
@@ -122,7 +175,7 @@ def convert_df_to_excel_custom(df_report):
         fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
         fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 12})
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 12})
-        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot)
+        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG SỐ DƯ CUỐI KỲ", fmt_tot)
         worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
     return output.getvalue()
 
@@ -170,7 +223,7 @@ def delete_transaction(row_idx):
 # ==================== PHẦN HIỂN THỊ (VIEW) ====================
 
 def render_input_form():
-    """Form nhập liệu dùng chung cho cả 2 giao diện"""
+    """Form nhập liệu dùng chung"""
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
         if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
@@ -186,11 +239,15 @@ def render_input_form():
         st.write("📝 **Nội dung:**")
         d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
         
-        st.markdown("<br><b>📷 Chụp Hóa Đơn</b>", unsafe_allow_html=True)
-        cam_mode = st.toggle("Dùng Camera", value=True)
+        # Mặc định tắt Camera để tiết kiệm pin
+        st.markdown("<br><b>📷 Hình ảnh chứng từ</b>", unsafe_allow_html=True)
+        cam_mode = st.toggle("Dùng Camera Chụp Trực Tiếp", value=False)
+        
         img_data = None
-        if cam_mode: img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed")
-        else: img_data = st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+        if cam_mode: 
+            img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed")
+        else: 
+            img_data = st.file_uploader("Tải ảnh từ thư viện", type=['jpg','png','jpeg'], key="up_new")
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
@@ -209,7 +266,6 @@ def render_input_form():
             else: st.warning("Thiếu thông tin!")
 
 def render_dashboard_box(bal, thu, chi):
-    """Hộp số dư dùng chung"""
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
     st.markdown(f"""
         <div class="balance-box">
@@ -223,49 +279,43 @@ def render_dashboard_box(bal, thu, chi):
     """, unsafe_allow_html=True)
 
 def render_report_table(df):
-    """Bảng Sổ Quỹ dùng chung"""
     if df.empty:
         st.info("Chưa có dữ liệu.")
         return
-
-    # Bộ lọc
     col_d1, col_d2 = st.columns(2)
     start_d = col_d1.date_input("Từ ngày", datetime.now().replace(day=1), key="v_start")
     end_d = col_d2.date_input("Đến ngày", datetime.now(), key="v_end")
     
+    # GỌI HÀM XỬ LÝ SỐ DƯ CHUẨN KẾ TOÁN
     df_report = process_report_data(df, start_d, end_d)
     
     if not df_report.empty:
-        def highlight_rows(row):
-            return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row) if row['Loai'] == 'Thu' else [''] * len(row)
-        def color_negative_red(val):
-            color = 'red' if isinstance(val, (int, float)) and val < 0 else 'black'
-            return f'color: {color}'
+        # Tô màu
+        def highlight_rows(row): 
+            if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
+            if row['Loai'] == 'Open': return ['background-color: #E0E0E0; font-style: italic'] * len(row)
+            return [''] * len(row)
+            
+        def color_negative_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
 
         st.dataframe(
-            df_report.style.apply(highlight_rows, axis=1).map(color_negative_red, subset=['ConLai']).format({"SoTien": "{:,.0f}", "ConLai": "{:,.0f}"}),
+            df_report.style.apply(highlight_rows, axis=1).map(color_negative_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}),
             column_config={
-                "STT": st.column_config.NumberColumn("STT", width="small"),
-                "Khoan": st.column_config.TextColumn("Khoản", width="large"),
-                "NgayChi": st.column_config.TextColumn("Ngày chi"),
-                "NgayNhan": st.column_config.TextColumn("Ngày Nhận"),
-                "SoTien": st.column_config.NumberColumn("Số tiền"),
-                "ConLai": st.column_config.NumberColumn("Còn lại"),
+                "STT": st.column_config.NumberColumn("STT", width="small"), 
+                "Khoan": st.column_config.TextColumn("Khoản", width="large"), 
+                "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", 
+                "SoTienShow": st.column_config.NumberColumn("Số tiền"), 
+                "ConLai": st.column_config.NumberColumn("Còn lại"), 
                 "Loai": None
             },
             hide_index=True, use_container_width=True, height=500
         )
         final_bal = df_report['ConLai'].iloc[-1]
-        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG CÒN LẠI: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
     else: st.warning("Không có dữ liệu.")
 
 def render_history_list(df):
-    """Danh sách thẻ Card View"""
-    if df.empty:
-        st.info("Trống")
-        return
-    
-    # Form sửa/xóa
+    if df.empty: st.info("Trống"); return
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
@@ -282,13 +332,10 @@ def render_history_list(df):
                 b1, b2 = st.columns(2)
                 if b1.button("Lưu", type="primary", use_container_width=True):
                     update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
-                    st.session_state.edit_row_index = None
-                    st.rerun()
+                    st.session_state.edit_row_index = None; st.rerun()
                 if b2.button("Hủy", use_container_width=True):
-                    st.session_state.edit_row_index = None
-                    st.rerun()
+                    st.session_state.edit_row_index = None; st.rerun()
 
-    # Danh sách
     df_sorted = df.sort_values(by='Ngay', ascending=False)
     for index, row in df_sorted.iterrows():
         with st.container(border=True):
@@ -301,20 +348,12 @@ def render_history_list(df):
             with col_amt:
                 st.markdown(f"<div style='text-align:right; color:{money_color}; font-weight:bold'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
                 if row['HinhAnh']: st.markdown(f"<div style='text-align:right'><a href='{row['HinhAnh']}' target='_blank'>Xem ảnh</a></div>", unsafe_allow_html=True)
-            
             c1, c2 = st.columns(2)
-            if c1.button("Sửa", key=f"e_{row['Row_Index']}", use_container_width=True):
-                st.session_state.edit_row_index = row['Row_Index']
-                st.rerun()
-            if c2.button("Xóa", key=f"d_{row['Row_Index']}", use_container_width=True):
-                delete_transaction(row['Row_Index'])
-                st.toast("Đã xóa")
-                time.sleep(0.5)
-                st.rerun()
+            if c1.button("Sửa", key=f"e_{row['Row_Index']}", use_container_width=True): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
+            if c2.button("Xóa", key=f"d_{row['Row_Index']}", use_container_width=True): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
 
 def render_export_tab(df):
-    """Tab xuất Excel"""
-    st.write("📥 **Xuất file**")
+    st.write("📥 **Xuất file Excel Sổ Quỹ**")
     if not df.empty:
         c1, c2 = st.columns(2)
         d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ex_d1")
@@ -330,7 +369,6 @@ def render_export_tab(df):
 
 # ==================== MAIN APP LOGIC ====================
 
-# 1. LOAD DATA
 df = load_data_with_index()
 total_thu = 0; total_chi = 0; balance = 0
 if not df.empty:
@@ -338,35 +376,21 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-# 2. THANH CHUYỂN ĐỔI GIAO DIỆN (NẰM TRÊN CÙNG)
 layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại (Tabs)", "💻 Laptop (Chia đôi)"], horizontal=True)
 st.divider()
 
-# 3. ĐIỀU HƯỚNG GIAO DIỆN
 if "Laptop" in layout_mode:
-    # --- GIAO DIỆN LAPTOP (SPLIT SCREEN) ---
-    col_left, col_right = st.columns([1, 1.8], gap="medium") # Bên phải rộng hơn chút
-    
-    with col_left:
-        # Cột Trái: Chỉ để nhập liệu
-        render_input_form()
-    
+    col_left, col_right = st.columns([1, 1.8], gap="medium")
+    with col_left: render_input_form()
     with col_right:
-        # Cột Phải: Xem báo cáo và lịch sử
         render_dashboard_box(balance, total_thu, total_chi)
-        
-        # Tabs con bên phải
         pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
         with pc_tab1: render_report_table(df)
         with pc_tab2: render_history_list(df)
         with pc_tab3: render_export_tab(df)
-
 else:
-    # --- GIAO DIỆN MOBILE (TABS TRUYỀN THỐNG) ---
     render_dashboard_box(balance, total_thu, total_chi)
-    
     m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
-    
     with m_tab1: render_input_form()
     with m_tab2: render_history_list(df)
     with m_tab3: render_report_table(df)
