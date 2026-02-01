@@ -10,82 +10,58 @@ from io import BytesIO
 import unicodedata
 
 # --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (FIX LỖI MẤT NÚT SIDEBAR) ---
+# --- 2. CSS TỐI ƯU (CẬP NHẬT HEADER & TÊN RIÊNG) ---
 st.markdown("""
 <style>
-    /* 1. Kéo nội dung lên trên, nhưng chừa chỗ cho nút Sidebar */
-    .block-container { 
-        padding-top: 2rem !important; /* Tăng nhẹ để không đè lên nút mũi tên */
-        padding-bottom: 3rem !important; 
-        padding-left: 0.5rem !important; 
-        padding-right: 0.5rem !important; 
-    }
+    /* 1. Cấu hình lề trang */
+    .block-container { padding-top: 2.5rem !important; padding-bottom: 3rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
     
-    /* 2. XỬ LÝ HEADER & SIDEBAR TOGGLE (QUAN TRỌNG) */
+    /* 2. Ẩn các thành phần thừa của Streamlit */
+    #MainMenu {visibility: hidden;} /* Ẩn menu 3 gạch (nếu muốn hiện lại thì xóa dòng này) */
+    footer {visibility: hidden;}    /* Ẩn dòng Made with Streamlit */
+    header {visibility: hidden;}    /* Ẩn thanh header mặc định */
     
-    /* Không ẩn toàn bộ header nữa, chỉ làm nó trong suốt */
-    header {
-        background-color: transparent !important;
-    }
+    /* Ẩn nút Fork / Deploy / Github cụ thể */
+    .stAppDeployButton { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
     
-    /* Ẩn trang trí (vạch màu cầu vồng trên cùng) */
-    [data-testid="stDecoration"] {
-        display: none;
-    }
-    
-    /* Ẩn menu 3 chấm bên phải */
-    [data-testid="stMainMenu"] {
-        visibility: hidden;
-    }
-    
-    /* Ẩn nút Deploy (nếu có) */
-    .stDeployButton {
-        display: none;
-    }
-    
-    /* Ẩn Footer "Made with Streamlit" */
-    footer {
-        visibility: hidden;
+    /* 3. CHÈN TÊN RIÊNG "TUẤN VDS.HCM" VÀO GÓC TRÊN PHẢI */
+    .custom-header-name {
+        position: fixed;
+        top: 12px;
+        right: 60px; /* Cách lề phải 60px để tránh nút 3 chấm nếu có */
+        z-index: 999999;
+        font-family: 'Source Sans Pro', sans-serif;
+        font-weight: 700;
+        font-size: 1.2rem;
+        color: #1565C0; /* Màu xanh thương hiệu */
+        background-color: white; /* Nền trắng che các phần tử dưới */
+        padding: 5px 10px;
+        border-radius: 8px;
+        pointer-events: none; /* KHÔNG THỂ BẤM VÀO (Chỉ để nhìn) */
+        user-select: none;    /* Không cho bôi đen */
     }
 
-    /* Đảm bảo nút Mũi tên (>) luôn hiện rõ màu đen */
-    [data-testid="stSidebarCollapsedControl"] {
-        color: #000000 !important;
-        display: block !important;
-        visibility: visible !important;
-    }
-
-    /* 3. TỐI ƯU CÁC PHẦN KHÁC */
-    
-    /* Camera Full Width */
+    /* 4. Tối ưu Camera Full Width */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
     
-    /* Balance Box Styling */
-    .balance-box { 
-        padding: 20px 15px;
-        border-radius: 0 0 20px 20px; 
-        background: linear-gradient(to bottom, #f8f9fa, #ffffff);
-        border-bottom: 1px solid #e0e0e0; 
-        border-left: 1px solid #f0f0f0;
-        border-right: 1px solid #f0f0f0;
-        margin-bottom: 20px; 
-        text-align: center; 
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-    }
-    .balance-text { font-size: 2.2rem !important; font-weight: 800; margin: 10px 0; }
-    
-    /* List & Form Styling */
-    .history-row { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+    /* 5. Giao diện khác */
+    .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
+    .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
+    .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
     .amt-text { font-weight: bold; font-size: 1rem; }
-    
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
 </style>
+
+<div class="custom-header-name">
+    TUẤN VDS.HCM
+</div>
 """, unsafe_allow_html=True)
 
 # --- KẾT NỐI API ---
@@ -269,6 +245,7 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
+    # Sửa lỗi thụt đầu dòng HTML lần trước
     html_content = f"""
 <div class="balance-box">
     <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
@@ -286,10 +263,7 @@ def render_dashboard_box(bal, thu, chi):
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    
-    today = datetime.now()
-    d30 = today - timedelta(days=30)
-    
+    today = datetime.now(); d30 = today - timedelta(days=30)
     col_d1, col_d2 = st.columns(2)
     start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
@@ -362,19 +336,15 @@ def render_export(df):
     else: st.info("Trống")
 
 # ==================== MAIN ====================
-# Nút chọn giao diện nằm trong Sidebar để màn hình chính thoáng hơn
-with st.sidebar:
-    st.header("⚙️ Cài đặt")
-    layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
-    st.divider()
-    st.caption("Phiên bản v2.1")
-
 df = load_data_with_index()
 total_thu = 0; total_chi = 0; balance = 0
 if not df.empty:
     total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum()
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
+
+layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"], horizontal=True)
+st.divider()
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
