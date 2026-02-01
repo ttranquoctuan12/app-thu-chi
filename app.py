@@ -12,7 +12,7 @@ import unicodedata
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (FIX LỖI HEADER & THU NHỎ TÊN) ---
+# --- 2. CSS TỐI ƯU (FIX LỖI MẤT NÚT SIDEBAR) ---
 st.markdown("""
 <style>
     /* 1. Cấu hình lề trang */
@@ -23,43 +23,61 @@ st.markdown("""
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG */
-    header { display: none !important; visibility: hidden !important; }
-    [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
-    [data-testid="stHeaderActionElements"] { display: none !important; }
+    /* 2. XỬ LÝ ẨN ICON THỪA NHƯNG GIỮ LẠI NÚT SIDEBAR */
+    
+    /* Ẩn dải màu trang trí trên cùng */
     [data-testid="stDecoration"] { display: none !important; }
+    
+    /* Ẩn TOÀN BỘ cụm nút bên phải (Fork, GitHub, Menu 3 chấm, Deploy) */
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stHeaderActionElements"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    #MainMenu { display: none !important; }
+    
+    /* Ẩn Footer và Menu mặc định */
     footer { display: none !important; }
+    #MainMenu { display: none !important; }
 
-    /* 3. CHÈN TÊN RIÊNG "TUẤN VDS.HCM" (NHỎ GỌN HƠN) */
+    /* QUAN TRỌNG: Không được ẩn thẻ <header> vì nó chứa nút mở Sidebar */
+    /* Thay vào đó, làm nền trong suốt */
+    header {
+        background-color: transparent !important;
+    }
+    
+    /* Đảm bảo nút mở Sidebar (góc trái) luôn hiện rõ */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        z-index: 999999; /* Đẩy lên lớp trên cùng */
+        color: #333;
+    }
+
+    /* 3. TÊN RIÊNG "TUẤN VDS.HCM" (GÓC PHẢI) */
     .custom-header-name {
         position: fixed;
         top: 0;
         right: 0;
         width: 100%;
-        height: 35px; /* Giảm chiều cao */
-        background-color: rgba(255, 255, 255, 0.95);
-        z-index: 99999999;
+        height: 40px;
+        background-color: rgba(255, 255, 255, 0.9); /* Nền trắng mờ để che nội dung khi cuộn */
+        z-index: 99999; /* Thấp hơn nút sidebar một chút để ko che nút sidebar nếu màn hình bé */
         border-bottom: 1px solid #eee;
         display: flex;
         align-items: center;
-        justify-content: flex-end;
+        justify-content: flex-end; /* Căn phải */
         padding-right: 15px;
     }
     
     .custom-name-text {
         font-family: 'Segoe UI', sans-serif;
-        font-weight: 600; /* Giảm độ đậm */
-        font-size: 0.85rem; /* Giảm kích thước chữ (nhỏ gọn) */
+        font-weight: 600;
+        font-size: 0.85rem;
         color: #1565C0;
         background-color: #f0f7ff;
-        padding: 3px 10px; /* Giảm padding */
+        padding: 4px 12px;
         border-radius: 12px;
         pointer-events: none;
         user-select: none;
-        letter-spacing: 0.5px;
     }
 
     /* 4. GIAO DIỆN APP */
@@ -76,9 +94,6 @@ st.markdown("""
     
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
-    
-    /* Chỉnh lại Sidebar cho gọn */
-    [data-testid="stSidebar"] { padding-top: 2rem; }
 </style>
 
 <div class="custom-header-name">
@@ -358,8 +373,11 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-# CHUYỂN RADIO VÀO SIDEBAR ĐỂ GIAO DIỆN CHÍNH THOÁNG HƠN
-layout_mode = st.sidebar.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
+# TẠO SIDEBAR ĐỂ CHỨA NÚT CHUYỂN CHẾ ĐỘ
+with st.sidebar:
+    st.title("⚙️ Cài đặt")
+    layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
+    st.info("Phiên bản: 2.0 Pro")
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
