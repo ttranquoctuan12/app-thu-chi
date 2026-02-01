@@ -201,4 +201,168 @@ def render_input_form():
         d_type = c2.selectbox("Loại", ["Chi", "Thu"], key="t_new", label_visibility="collapsed")
         
         st.write("💰 **Số tiền:**")
-        d_amount = st.number_input("
+        d_amount = st.number_input("Số tiền", min_value=0, step=5000, value=st.session_state.new_amount, key="a_new", label_visibility="collapsed")
+        st.write("📝 **Nội dung:**")
+        d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
+        
+        st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
+        cam_mode = st.toggle("Dùng Camera", value=False)
+        img_data = None
+        if cam_mode: img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed")
+        else: img_data = st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
+            if d_amount > 0 and d_desc.strip() != "":
+                with st.spinner("Đang lưu..."):
+                    link = ""
+                    if img_data:
+                        fname = f"{d_date.strftime('%Y%m%d')}_{remove_accents(d_desc)}.jpg"
+                        link = upload_image_to_drive(img_data, fname)
+                    add_transaction(d_date, d_type, d_amount, d_desc, link)
+                st.success("Đã lưu!")
+                st.session_state.new_amount = 0; st.session_state.new_desc = ""; time.sleep(0.5); st.rerun()
+            else: st.warning("Thiếu thông tin!")
+
+def render_dashboard_box(bal, thu, chi):
+    text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
+    st.markdown(f"""
+        <div class="balance-box">
+            <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
+            <div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
+            <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
+                <div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
+                <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+def render_report_table(df):
+    if df.empty: st.info("Chưa có dữ liệu."); return
+    col_d1, col_d2 = st.columns(2)
+    start_d = col_d1.date_input("Từ ngày", datetime.now().replace(day=1), key="v_start")
+    end_d = col_d2.date_input("Đến ngày", datetime.now(), key="v_end")
+    df_report = process_report_data(df, start_d, end_d)
+    
+    if not df_report.empty:
+        def highlight_rows(row): 
+            if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
+            if row['Loai'] == 'Open': return ['background-color: #E0E0E0; font-style: italic'] * len(row)
+            return [''] * len(row)
+        def color_negative_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
+
+        st.dataframe(
+            df_report.style.apply(highlight_rows, axis=1).map(color_negative_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}),
+            column_config={"STT": st.column_config.NumberColumn("STT", width="small"), "Khoan": st.column_config.TextColumn("Khoản", width="large"), "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", "SoTienShow": "Số tiền", "ConLai": "Còn lại", "Loai": None},
+            hide_index=True, use_container_width=True, height=500
+        )
+        final_bal = df_report['ConLai'].iloc[-1]
+        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
+    else: st.warning("Không có dữ liệu.")
+
+def render_history_list(df):
+    """Giao diện danh sách siêu gọn (Compact List)"""
+    if df.empty: st.info("Trống"); return
+
+    # --- KHUNG SỬA GIAO DỊCH (Hiện lên đầu nếu bấm Sửa) ---
+    if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
+    if st.session_state.edit_row_index is not None:
+        row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
+        if not row_to_edit.empty:
+            row_data = row_to_edit.iloc[0]
+            with st.container(border=True):
+                st.info(f"✏️ Đang sửa: {row_data['MoTa']}")
+                ue1, ue2 = st.columns([1.5, 1])
+                ud_date = ue1.date_input("Ngày", value=row_data['Ngay'], key="u_d")
+                ud_type = ue2.selectbox("Loại", ["Chi", "Thu"], index=(0 if row_data['Loai'] == "Chi" else 1), key="u_t")
+                ud_amt = st.number_input("Tiền", value=int(row_data['SoTien']), step=1000, key="u_a")
+                ud_desc = st.text_input("Mô tả", value=row_data['MoTa'], key="u_desc")
+                b1, b2 = st.columns(2)
+                if b1.button("💾 LƯU LẠI", type="primary", use_container_width=True):
+                    update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
+                    st.session_state.edit_row_index = None; st.rerun()
+                if b2.button("❌ HỦY", use_container_width=True):
+                    st.session_state.edit_row_index = None; st.rerun()
+
+    # --- DANH SÁCH GIAO DỊCH (GIAO DIỆN MỚI) ---
+    df_sorted = df.sort_values(by='Ngay', ascending=False)
+    
+    # Header nhỏ gọn
+    h1, h2, h3 = st.columns([2, 1, 1])
+    h1.caption("Nội dung")
+    h2.caption("Số tiền")
+    h3.caption("Thao tác")
+    st.divider()
+
+    for index, row in df_sorted.iterrows():
+        # Dùng st.columns để chia dòng thành 3 phần, KHÔNG DÙNG CONTAINER CÓ VIỀN
+        c1, c2, c3 = st.columns([2, 1, 1], gap="small")
+        
+        # Cột 1: Nội dung + Ngày tháng
+        with c1:
+            icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
+            st.markdown(f"""
+            <div class="desc-text">{row['MoTa']}</div>
+            <div class="date-text">{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>
+            """, unsafe_allow_html=True)
+            if row['HinhAnh']: st.markdown(f"<a href='{row['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
+        
+        # Cột 2: Số tiền
+        with c2:
+            color = "#27ae60" if row['Loai'] == 'Thu' else "#c0392b"
+            st.markdown(f"<div class='amt-text' style='color:{color}'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
+            
+        # Cột 3: Nút Sửa / Xóa (Icon nhỏ)
+        with c3:
+            bc1, bc2 = st.columns(2)
+            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): 
+                st.session_state.edit_row_index = row['Row_Index']; st.rerun()
+            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): 
+                delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
+        
+        # Đường kẻ mờ phân cách
+        st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
+
+def render_export_tab(df):
+    st.write("📥 **Xuất file Excel Sổ Quỹ**")
+    if not df.empty:
+        c1, c2 = st.columns(2)
+        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ex_d1")
+        d2 = c2.date_input("Đến", datetime.now(), key="ex_d2")
+        if st.button("Tải Sổ Quỹ (Excel)", type="primary", use_container_width=True):
+            df_rep = process_report_data(df, d1, d2)
+            if df_rep.empty: st.warning("Không có dữ liệu")
+            else:
+                data = convert_df_to_excel_custom(df_rep)
+                fname = f"SoQuy_{d1.strftime('%d%m')}_{d2.strftime('%d%m')}.xlsx"
+                st.download_button("⬇️ TẢI NGAY", data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
+    else: st.info("Trống")
+
+# ==================== MAIN APP LOGIC ====================
+
+df = load_data_with_index()
+total_thu = 0; total_chi = 0; balance = 0
+if not df.empty:
+    total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum()
+    total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
+    balance = total_thu - total_chi
+
+layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"], horizontal=True)
+st.divider()
+
+if "Laptop" in layout_mode:
+    col_left, col_right = st.columns([1, 1.8], gap="medium")
+    with col_left: render_input_form()
+    with col_right:
+        render_dashboard_box(balance, total_thu, total_chi)
+        pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
+        with pc_tab1: render_report_table(df)
+        with pc_tab2: render_history_list(df)
+        with pc_tab3: render_export_tab(df)
+else:
+    render_dashboard_box(balance, total_thu, total_chi)
+    m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
+    with m_tab1: render_input_form()
+    with m_tab2: render_history_list(df)
+    with m_tab3: render_report_table(df)
+    with m_tab4: render_export_tab(df)
