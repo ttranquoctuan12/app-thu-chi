@@ -13,7 +13,7 @@ import pytz
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (KHẮC PHỤC LỖI SIDEBAR VÀ HTML) ---
+# --- 2. CSS TỐI ƯU ---
 st.markdown("""
 <style>
     /* 1. Cấu hình lề trang */
@@ -24,7 +24,7 @@ st.markdown("""
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. ẨN CÁC ICON THỪA (Fork, GitHub, Deploy...) */
+    /* 2. ẨN CÁC ICON THỪA */
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
     [data-testid="stHeaderActionElements"] { display: none !important; }
@@ -33,19 +33,16 @@ st.markdown("""
     footer { display: none !important; }
     #MainMenu { display: none !important; }
 
-    /* 3. KHẮC PHỤC LỖI MẤT NÚT SIDEBAR */
-    /* Làm header trong suốt để không che nội dung, nhưng VẪN HIỂN THỊ để chứa nút sidebar */
+    /* 3. HEADER TRONG SUỐT & NÚT SIDEBAR */
     header[data-testid="stHeader"] {
         background-color: transparent !important;
         z-index: 999;
     }
-    
-    /* Ép nút mở Sidebar (Hamburger menu) hiện rõ */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        color: #000000 !important; /* Màu đen */
-        background-color: rgba(255, 255, 255, 0.5); /* Nền trắng mờ nhẹ */
+        color: #000000 !important;
+        background-color: rgba(255, 255, 255, 0.5);
         border-radius: 5px;
     }
 
@@ -58,8 +55,9 @@ st.markdown("""
         border-radius: 12px; 
         background-color: #f8f9fa; 
         border: 1px solid #e0e0e0; 
-        margin-bottom: 5px; /* Giảm margin dưới để chữ ký gần hơn */
+        margin-bottom: 5px; 
         text-align: center;
+        position: relative;
     }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
     
@@ -70,6 +68,17 @@ st.markdown("""
     
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
+    
+    /* Footer phiên bản */
+    .app-footer {
+        text-align: center;
+        margin-top: 50px;
+        padding-top: 20px;
+        border-top: 1px dashed #eee;
+        color: #999;
+        font-size: 0.8rem;
+        font-style: italic;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,6 +155,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
         fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'})
+        
         fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
         fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
         fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
@@ -258,8 +268,8 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # --- ĐOẠN NÀY ĐÃ ĐƯỢC CHỈNH SỬA KỸ: KHÔNG THỤT DÒNG HTML & ĐƯA TÊN RA NGOÀI ---
-    html_content = f"""
+    # CHỮ KÝ NẰM GỌN GÀNG GÓC TRÁI DƯỚI BÊN NGOÀI
+    st.markdown(f"""
 <div class="balance-box">
 <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN</div>
 <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
@@ -269,9 +279,8 @@ def render_dashboard_box(bal, thu, chi):
 <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
 </div>
 </div>
-<div style="text-align: left; margin-top: 0px; margin-bottom: 15px; font-size: 0.75rem; color: #aaa; font-style: italic; font-weight: 600;">TUẤN VDS.HCM</div>
-"""
-    st.markdown(html_content, unsafe_allow_html=True)
+<div style="text-align: left; margin-top: 0px; margin-bottom: 10px; font-size: 0.75rem; color: #aaa; font-style: italic; font-weight: 600;">TUẤN VDS.HCM</div>
+""", unsafe_allow_html=True)
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
@@ -348,25 +357,34 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
+# SIDEBAR (GIỮ NGUYÊN NÚT LÀM MỚI, NHƯNG DI CHUYỂN TOGGLE)
 with st.sidebar:
     st.title("⚙️ Cài đặt")
-    layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
-    st.info("Phiên bản: 2.8 Stable")
 
-if "Laptop" in layout_mode:
+render_dashboard_box(balance, total_thu, total_chi)
+
+# CÔNG TẮC GẠT CHẾ ĐỘ XEM (NẰM DƯỚI BOX, BÊN PHẢI)
+_, col_toggle = st.columns([2, 1.5])
+with col_toggle:
+    is_laptop = st.toggle("💻 Chế độ Laptop", value=False)
+
+layout_mode = "💻 Laptop" if is_laptop else "📱 Điện thoại"
+
+if is_laptop:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
     with col_left: render_input_form()
     with col_right:
-        render_dashboard_box(balance, total_thu, total_chi)
         pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
         with pc_tab1: render_report_table(df)
         with pc_tab2: render_history_list(df)
         with pc_tab3: render_export(df)
 else:
-    render_dashboard_box(balance, total_thu, total_chi)
     m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
     with m_tab1: render_input_form()
     with m_tab2: render_history_list(df)
     with m_tab3: render_report_table(df)
     with m_tab4: render_export(df)
+
+# FOOTER CUỐI TRANG
+st.markdown("<div class='app-footer'>Phiên bản: 3.0 UX Ultimate - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
