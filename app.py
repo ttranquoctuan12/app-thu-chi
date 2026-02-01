@@ -62,14 +62,14 @@ st.markdown("""
 <div class="custom-header-name"><span class="custom-name-text">TUẤN VDS.HCM</span></div>
 """, unsafe_allow_html=True)
 
-# --- KẾT NỐI API (TỐI ƯU CACHE RESOURCE) ---
+# --- KẾT NỐI API ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
-@st.cache_resource # <--- Cache kết nối (Chỉ chạy 1 lần)
+@st.cache_resource
 def get_creds():
     return Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
 
-@st.cache_resource # <--- Cache client Gspread (Chỉ chạy 1 lần)
+@st.cache_resource
 def get_gs_client():
     return gspread.authorize(get_creds())
 
@@ -93,7 +93,6 @@ def format_vnd(amount):
 # --- XỬ LÝ SỐ LIỆU ---
 def process_report_data(df, start_date=None, end_date=None):
     if df.empty: return pd.DataFrame()
-    # Tính toán trên bản sao để không ảnh hưởng dữ liệu gốc
     df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
@@ -123,29 +122,82 @@ def process_report_data(df, start_date=None, end_date=None):
 
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-def convert_df_to_excel_custom(df_report):
+# --- EXCEL CUSTOM (CẤU TRÚC MỚI: 4 DÒNG HEADER) ---
+def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF'})
-        fmt_normal = workbook.add_format({'border': 1})
-        fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0'})
-        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True})
-        fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0'})
-        fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True})
-        fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0'})
-        fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True})
-        fmt_orange = workbook.add_format({'border': 1, 'num_format': '#,##0', 'bg_color': '#FF9900', 'bold': True})
         
-        worksheet = workbook.add_worksheet("SoQuy")
-        headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
-        for c, h in enumerate(headers): worksheet.write(0, c, h, fmt_header)
-        worksheet.set_column('B:B', 35); worksheet.set_column('E:F', 15)
+        # --- ĐỊNH DẠNG (STYLES) ---
+        fmt_title = workbook.add_format({
+            'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'
+        })
+        fmt_subtitle = workbook.add_format({
+            'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'
+        })
+        # Định dạng cho dòng thông tin hệ thống và người tạo
+        fmt_info = workbook.add_format({
+            'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True
+        })
+        
+        # Header bảng
+        fmt_header = workbook.add_format({
+            'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 
+            'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'
+        })
+        
+        # Dữ liệu
+        fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
+        fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
+        
+        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
+        fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
+        
+        fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
+        fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
+        
+        fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
+        fmt_orange = workbook.add_format({'border': 1, 'num_format': '#,##0', 'bg_color': '#FF9900', 'bold': True, 'font_size': 11, 'valign': 'vcenter'}) 
+        
+        fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter'})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
 
+        worksheet = workbook.add_worksheet("SoQuy")
+        
+        # --- HEADER EXCEL (4 DÒNG ĐẦU) ---
+        # 1. QUYẾT TOÁN (Size 26)
+        worksheet.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
+        
+        # 2. Thời gian (Size 14)
+        date_str = f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}"
+        worksheet.merge_range('A2:F2', date_str, fmt_subtitle)
+        
+        # 3. Thông tin hệ thống (Mới)
+        current_time_str = datetime.now().strftime("%H:%M %d/%m/%Y")
+        sys_info = f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}"
+        worksheet.merge_range('A3:F3', sys_info, fmt_info)
+        
+        # 4. Người tạo (Mới)
+        creator_info = "Người tạo: TUẤN VDS.HCM"
+        worksheet.merge_range('A4:F4', creator_info, fmt_info)
+        
+        # 5. Tiêu đề bảng (Dòng 5)
+        headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
+        header_row_idx = 4
+        for c, h in enumerate(headers): 
+            worksheet.write(header_row_idx, c, h, fmt_header)
+        
+        # Set độ rộng
+        worksheet.set_column('A:A', 6); worksheet.set_column('B:B', 40)
+        worksheet.set_column('C:D', 15); worksheet.set_column('E:F', 18)
+
+        # --- DỮ LIỆU ---
+        start_row_idx = 5
         for i, row in df_report.iterrows():
-            r = i + 1
+            r = start_row_idx + i
             loai = row['Loai']
             bal = row['ConLai']
+            
             if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
@@ -154,18 +206,24 @@ def convert_df_to_excel_custom(df_report):
             worksheet.write(r, 1, row['Khoan'], c_fmt)
             worksheet.write(r, 2, row['NgayChi'], c_fmt)
             worksheet.write(r, 3, row['NgayNhan'], c_fmt)
-            worksheet.write(r, 4, "" if loai=='Open' else row['SoTienShow'], m_fmt)
+            if loai == 'Open': worksheet.write(r, 4, "", m_fmt)
+            else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
             worksheet.write(r, 5, bal, bal_fmt)
             
-        l_row = len(df_report) + 1
+        # TỔNG
+        l_row = start_row_idx + len(df_report)
         fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
-        fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 12})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 12})
-        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG SỐ DƯ CUỐI KỲ", fmt_tot)
+        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot)
         worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
+        
+        # Chỉnh chiều cao dòng
+        worksheet.set_row(0, 40) # Tiêu đề to
+        worksheet.set_row(1, 25)
+        worksheet.set_row(4, 30) # Header bảng
+
     return output.getvalue()
 
-# --- DRIVE & CRUD (TỐI ƯU CACHE DATA) ---
+# --- DRIVE & CRUD ---
 def upload_image_to_drive(image_file, file_name):
     try:
         creds = get_creds()
@@ -176,7 +234,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-@st.cache_data(ttl=300) # <--- Tự động làm mới dữ liệu sau 300 giây (5 phút) nếu không có thao tác
+@st.cache_data(ttl=300)
 def load_data_with_index():
     try:
         client = get_gs_client()
@@ -190,7 +248,6 @@ def load_data_with_index():
         return df
     except: return pd.DataFrame()
 
-# --- HÀM CLEAR CACHE KHI CÓ THAY ĐỔI ---
 def clear_data_cache():
     st.cache_data.clear()
 
@@ -198,20 +255,20 @@ def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
-    clear_data_cache() # <--- Xóa cache ngay sau khi thêm
+    clear_data_cache()
 
 def update_transaction(row_idx, date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     r = int(row_idx)
     sheet.update(f"A{r}:E{r}", [[date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link]])
-    clear_data_cache() # <--- Xóa cache sau khi sửa
+    clear_data_cache()
 
 def delete_transaction(row_idx):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx))
-    clear_data_cache() # <--- Xóa cache sau khi xóa
+    clear_data_cache()
 
 # ==================== VIEW MODULES ====================
 
@@ -272,9 +329,7 @@ def render_report_table(df):
     start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
     
-    # Process data with simple logic first to avoid blocking UI
     df_report = process_report_data(df, start_d, end_d)
-    
     if not df_report.empty:
         def highlight(row): 
             if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
@@ -315,8 +370,7 @@ def render_history_list(df):
     df_sorted = df.sort_values(by='Ngay', ascending=False)
     h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
     
-    # Chỉ hiển thị tối đa 50 giao dịch gần nhất để tránh lag nếu danh sách quá dài
-    for index, row in df_sorted.head(50).iterrows():
+    for index, row in df_sorted.iterrows():
         c1, c2, c3 = st.columns([2, 1, 1], gap="small")
         with c1:
             icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
@@ -331,8 +385,7 @@ def render_history_list(df):
             if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
         st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
     
-    if len(df) > 50:
-        st.caption("... và còn nhiều giao dịch cũ hơn (đã ẩn để tối ưu tốc độ)")
+    if len(df) > 50: st.caption("... và còn nhiều giao dịch cũ hơn")
 
 def render_export(df):
     st.write("📥 **Xuất Excel Sổ Quỹ**")
@@ -340,16 +393,14 @@ def render_export(df):
         c1, c2 = st.columns(2)
         d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
         if st.button("Tải File", type="primary", use_container_width=True):
-            with st.spinner("Đang xử lý xuất file..."):
+            with st.spinner("Đang tạo file..."):
                 df_r = process_report_data(df, d1, d2)
-                data = convert_df_to_excel_custom(df_r)
+                data = convert_df_to_excel_custom(df_r, d1, d2)
             st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
     else: st.info("Trống")
 
 # ==================== MAIN ====================
-# Tải dữ liệu từ Cache (Nhanh hơn rất nhiều)
 df = load_data_with_index()
-
 total_thu = 0; total_chi = 0; balance = 0
 if not df.empty:
     total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum()
@@ -360,9 +411,8 @@ with st.sidebar:
     st.title("⚙️ Cài đặt")
     layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
-        clear_data_cache()
-        st.rerun()
-    st.info("Phiên bản: 2.1 Fast")
+        clear_data_cache(); st.rerun()
+    st.info("Phiên bản: 2.3 Final")
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
