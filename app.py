@@ -227,21 +227,21 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # --- CẬP NHẬT: Thêm dòng tiêu đề nổi bật ở đây ---
-    st.markdown(f"""
-        <div class="balance-box">
-            <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
-                HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN
-            </div>
-            
-            <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
-            <div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
-            <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
-                <div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
-                <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    # --- SỬA LỖI Ở ĐÂY: Loại bỏ thụt đầu dòng (indent) trong chuỗi HTML ---
+    html_content = f"""
+<div class="balance-box">
+    <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+        HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN
+    </div>
+    <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
+    <div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
+    <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
+        <div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
+        <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
+    </div>
+</div>
+"""
+    st.markdown(html_content, unsafe_allow_html=True)
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
