@@ -13,7 +13,7 @@ import pytz
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU GIAO DIỆN & ẨN ICON THỪA ---
+# --- 2. CSS TỐI ƯU (FIX LỖI MẤT SIDEBAR & ẨN ICON) ---
 st.markdown("""
 <style>
     /* 1. Cấu hình lề trang */
@@ -24,40 +24,42 @@ st.markdown("""
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG (Header, Toolbar, Deploy Button) */
+    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG (Fork, GitHub, Deploy) */
     
-    /* Ẩn dải màu trang trí trên cùng */
+    /* Ẩn dải màu trang trí */
     [data-testid="stDecoration"] { display: none !important; }
     
-    /* Ẩn TOÀN BỘ cụm nút bên phải (Fork, GitHub, Menu 3 chấm) */
+    /* Ẩn Toolbar (Chứa nút Fork, GitHub, 3 chấm) */
     [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
-    [data-testid="stHeaderActionElements"] { display: none !important; visibility: hidden !important; }
+    [data-testid="stHeaderActionElements"] { display: none !important; }
     
-    /* Ẩn nút "Deploy" (Vương miện/Tên lửa) ở góc phải */
-    .stAppDeployButton { display: none !important; visibility: hidden !important; }
+    /* Ẩn nút Deploy */
+    .stAppDeployButton { display: none !important; }
     
-    /* Ẩn Widget trạng thái (Running/Stop) */
-    [data-testid="stStatusWidget"] { display: none !important; }
-    
-    /* Ẩn Footer và Menu mặc định */
+    /* Ẩn Footer/Menu */
     footer { display: none !important; }
     #MainMenu { display: none !important; }
 
-    /* QUAN TRỌNG: Làm trong suốt Header để không che nội dung, nhưng vẫn giữ nút Sidebar */
+    /* 3. XỬ LÝ HEADER & SIDEBAR (QUAN TRỌNG) */
+    
+    /* Không được ẩn display:none header vì sẽ mất nút sidebar */
+    /* Chỉ làm nền trong suốt và đẩy xuống lớp dưới */
     header[data-testid="stHeader"] {
         background-color: transparent !important;
-        z-index: 1; /* Thấp hơn nội dung */
+        z-index: 1; 
     }
     
-    /* Đảm bảo nút mở Sidebar (góc trái) luôn hiện rõ và bấm được */
+    /* ÉP NÚT MỞ SIDEBAR HIỆN RA VÀ CÓ MÀU ĐEN */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        z-index: 999999; /* Đẩy lên lớp trên cùng */
-        color: #333; /* Màu đen cho dễ nhìn */
+        z-index: 999999 !important; /* Lớp cao nhất */
+        color: #000000 !important; /* Màu đen để dễ nhìn */
+        top: 10px !important;
+        left: 10px !important;
     }
 
-    /* 3. GIAO DIỆN APP */
+    /* 4. GIAO DIỆN APP */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
     
@@ -79,6 +81,20 @@ st.markdown("""
     
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
+    
+    /* CSS cho chữ ký */
+    .signature-tag {
+        position: absolute;
+        bottom: 5px;
+        right: 10px;
+        font-size: 0.75rem;
+        color: #888;
+        font-weight: 700;
+        background-color: rgba(255,255,255,0.8);
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-family: sans-serif;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,13 +162,11 @@ def process_report_data(df, start_date=None, end_date=None):
 
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# --- EXCEL CUSTOM (UPDATE GIỜ VN) ---
+# --- EXCEL CUSTOM ---
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        
-        # --- ĐỊNH DẠNG ---
         fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
         fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
@@ -171,13 +185,10 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
 
         worksheet = workbook.add_worksheet("SoQuy")
         
-        # --- HEADER ---
         worksheet.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
-        
         date_str = f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}"
         worksheet.merge_range('A2:F2', date_str, fmt_subtitle)
         
-        # Lấy giờ Việt Nam để in vào file
         current_time_str = get_vn_time().strftime("%H:%M %d/%m/%Y")
         sys_info = f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}"
         worksheet.merge_range('A3:F3', sys_info, fmt_info)
@@ -187,8 +198,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
         for c, h in enumerate(headers): worksheet.write(4, c, h, fmt_header)
-        
-        worksheet.set_column('A:A', 6); worksheet.set_column('B:B', 40); worksheet.set_column('C:D', 15); worksheet.set_column('E:F', 18)
+        worksheet.set_column('B:B', 40); worksheet.set_column('C:D', 15); worksheet.set_column('E:F', 18)
 
         start_row_idx = 5
         for i, row in df_report.iterrows():
@@ -213,7 +223,6 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
         
         worksheet.set_row(0, 40); worksheet.set_row(1, 25); worksheet.set_row(4, 30)
-
     return output.getvalue()
 
 # --- DRIVE & CRUD ---
@@ -272,7 +281,6 @@ def render_input_form():
         if 'new_desc' not in st.session_state: st.session_state.new_desc = ""
 
         c1, c2 = st.columns([1.5, 1])
-        # SỬA LỖI: Dùng giờ VN làm mặc định
         d_date = c1.date_input("Ngày", get_vn_time(), key="d_new", label_visibility="collapsed")
         d_type = c2.selectbox("Loại", ["Chi", "Thu"], key="t_new", label_visibility="collapsed")
         
@@ -300,36 +308,28 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # SỬA: Đưa chữ TUẤN VDS.HCM vào bên trong hộp (Góc dưới phải)
-    st.markdown(f"""
+    # --- ĐOẠN NÀY ĐÃ ĐƯỢC SỬA: KHÔNG THỤT ĐẦU DÒNG HTML ---
+    html_content = f"""
 <div class="balance-box">
-    <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
-        HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN
-    </div>
-    <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
-    <div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
-    <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
-        <div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
-        <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
-    </div>
-    
-    <div style="position: absolute; bottom: 5px; right: 10px; font-size: 0.7rem; color: #aaa; font-style: italic; font-weight: bold; background-color: #f0f7ff; padding: 2px 6px; border-radius: 4px;">
-        TUẤN VDS.HCM
-    </div>
+<div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN</div>
+<div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
+<div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
+<div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
+<div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
+<div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
 </div>
-""", unsafe_allow_html=True)
+<div class="signature-tag">TUẤN VDS.HCM</div>
+</div>
+"""
+    st.markdown(html_content, unsafe_allow_html=True)
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    
-    # SỬA LỖI: Mặc định 30 ngày theo giờ VN
     today = get_vn_time()
     d30 = today - timedelta(days=30)
-    
     col_d1, col_d2 = st.columns(2)
     start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
-    
     df_report = process_report_data(df, start_d, end_d)
     if not df_report.empty:
         def highlight(row): 
@@ -413,7 +413,7 @@ with st.sidebar:
     layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
         clear_data_cache(); st.rerun()
-    st.info("Phiên bản: 2.5 Clean UX")
+    st.info("Phiên bản: 2.6 Bug Fixes")
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
