@@ -10,24 +10,54 @@ from io import BytesIO
 import unicodedata
 
 # --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 2. CSS TỐI ƯU (ĐẨY NỘI DUNG LÊN CAO NHẤT) ---
+# --- 2. CSS TỐI ƯU (FIX LỖI MẤT NÚT SIDEBAR) ---
 st.markdown("""
 <style>
-    /* 1. Kéo nội dung sát lên mép trên */
+    /* 1. Kéo nội dung lên trên, nhưng chừa chỗ cho nút Sidebar */
     .block-container { 
-        padding-top: 0rem !important; /* Không chừa lề trên */
+        padding-top: 2rem !important; /* Tăng nhẹ để không đè lên nút mũi tên */
         padding-bottom: 3rem !important; 
         padding-left: 0.5rem !important; 
         padding-right: 0.5rem !important; 
-        margin-top: -1rem !important; /* Kéo ngược lên để che header */
     }
     
-    /* 2. Ẩn hoàn toàn Header và Menu mặc định của Streamlit */
-    #MainMenu {visibility: hidden;} 
-    footer {visibility: hidden;} 
-    header {visibility: hidden;} 
+    /* 2. XỬ LÝ HEADER & SIDEBAR TOGGLE (QUAN TRỌNG) */
+    
+    /* Không ẩn toàn bộ header nữa, chỉ làm nó trong suốt */
+    header {
+        background-color: transparent !important;
+    }
+    
+    /* Ẩn trang trí (vạch màu cầu vồng trên cùng) */
+    [data-testid="stDecoration"] {
+        display: none;
+    }
+    
+    /* Ẩn menu 3 chấm bên phải */
+    [data-testid="stMainMenu"] {
+        visibility: hidden;
+    }
+    
+    /* Ẩn nút Deploy (nếu có) */
+    .stDeployButton {
+        display: none;
+    }
+    
+    /* Ẩn Footer "Made with Streamlit" */
+    footer {
+        visibility: hidden;
+    }
+
+    /* Đảm bảo nút Mũi tên (>) luôn hiện rõ màu đen */
+    [data-testid="stSidebarCollapsedControl"] {
+        color: #000000 !important;
+        display: block !important;
+        visibility: visible !important;
+    }
+
+    /* 3. TỐI ƯU CÁC PHẦN KHÁC */
     
     /* Camera Full Width */
     [data-testid="stCameraInput"] { width: 100% !important; }
@@ -35,9 +65,9 @@ st.markdown("""
     
     /* Balance Box Styling */
     .balance-box { 
-        padding: 20px 15px; /* Tăng padding chút cho thoáng */
-        border-radius: 0 0 20px 20px; /* Bo tròn 2 góc dưới */
-        background: linear-gradient(to bottom, #f8f9fa, #ffffff); /* Hiệu ứng gradient nhẹ */
+        padding: 20px 15px;
+        border-radius: 0 0 20px 20px; 
+        background: linear-gradient(to bottom, #f8f9fa, #ffffff);
         border-bottom: 1px solid #e0e0e0; 
         border-left: 1px solid #f0f0f0;
         border-right: 1px solid #f0f0f0;
@@ -239,7 +269,6 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # HTML căn chỉnh sát lề để tránh lỗi hiển thị
     html_content = f"""
 <div class="balance-box">
     <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
@@ -257,10 +286,13 @@ def render_dashboard_box(bal, thu, chi):
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    today = datetime.now(); d30 = today - timedelta(days=30)
-    col1, col2 = st.columns(2)
-    start_d = col1.date_input("Từ ngày", value=d30, key="v_start")
-    end_d = col2.date_input("Đến ngày", value=today, key="v_end")
+    
+    today = datetime.now()
+    d30 = today - timedelta(days=30)
+    
+    col_d1, col_d2 = st.columns(2)
+    start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
+    end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
     
     df_report = process_report_data(df, start_d, end_d)
     if not df_report.empty:
@@ -276,7 +308,7 @@ def render_report_table(df):
             hide_index=True, use_container_width=True, height=500
         )
         final_bal = df_report['ConLai'].iloc[-1]
-        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
     else: st.warning("Không có dữ liệu.")
 
 def render_history_list(df):
@@ -330,14 +362,13 @@ def render_export(df):
     else: st.info("Trống")
 
 # ==================== MAIN ====================
-# --- DI CHUYỂN NÚT CHỌN GIAO DIỆN VÀO SIDEBAR ---
+# Nút chọn giao diện nằm trong Sidebar để màn hình chính thoáng hơn
 with st.sidebar:
     st.header("⚙️ Cài đặt")
     layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
     st.divider()
-    st.caption("Phiên bản v2.0 - Optimized")
+    st.caption("Phiên bản v2.1")
 
-# --- NỘI DUNG CHÍNH ---
 df = load_data_with_index()
 total_thu = 0; total_chi = 0; balance = 0
 if not df.empty:
@@ -345,7 +376,6 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-# Hiển thị Dashboard ngay lập tức (không có header đè)
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
     with col_left: render_input_form()
@@ -356,7 +386,6 @@ if "Laptop" in layout_mode:
         with pc_tab2: render_history_list(df)
         with pc_tab3: render_export(df)
 else:
-    # Mobile View
     render_dashboard_box(balance, total_thu, total_chi)
     m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
     with m_tab1: render_input_form()
