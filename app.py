@@ -12,7 +12,7 @@ import unicodedata
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (FIX LỖI MẤT NÚT SIDEBAR) ---
+# --- 2. CSS TỐI ƯU ---
 st.markdown("""
 <style>
     /* 1. Cấu hình lề trang */
@@ -23,89 +23,53 @@ st.markdown("""
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. XỬ LÝ ẨN ICON THỪA NHƯNG GIỮ LẠI NÚT SIDEBAR */
+    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG */
+    header { background-color: transparent !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; z-index: 999999; color: #333; }
     
-    /* Ẩn dải màu trang trí trên cùng */
     [data-testid="stDecoration"] { display: none !important; }
-    
-    /* Ẩn TOÀN BỘ cụm nút bên phải (Fork, GitHub, Menu 3 chấm, Deploy) */
     [data-testid="stToolbar"] { display: none !important; }
     [data-testid="stHeaderActionElements"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    
-    /* Ẩn Footer và Menu mặc định */
     footer { display: none !important; }
     #MainMenu { display: none !important; }
 
-    /* QUAN TRỌNG: Không được ẩn thẻ <header> vì nó chứa nút mở Sidebar */
-    /* Thay vào đó, làm nền trong suốt */
-    header {
-        background-color: transparent !important;
-    }
-    
-    /* Đảm bảo nút mở Sidebar (góc trái) luôn hiện rõ */
-    [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        z-index: 999999; /* Đẩy lên lớp trên cùng */
-        color: #333;
-    }
-
-    /* 3. TÊN RIÊNG "TUẤN VDS.HCM" (GÓC PHẢI) */
+    /* 3. TÊN RIÊNG (GÓC PHẢI) */
     .custom-header-name {
-        position: fixed;
-        top: 0;
-        right: 0;
-        width: 100%;
-        height: 40px;
-        background-color: rgba(255, 255, 255, 0.9); /* Nền trắng mờ để che nội dung khi cuộn */
-        z-index: 99999; /* Thấp hơn nút sidebar một chút để ko che nút sidebar nếu màn hình bé */
-        border-bottom: 1px solid #eee;
-        display: flex;
-        align-items: center;
-        justify-content: flex-end; /* Căn phải */
-        padding-right: 15px;
+        position: fixed; top: 0; right: 0; width: 100%; height: 40px;
+        background-color: rgba(255, 255, 255, 0.9); z-index: 99999;
+        border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: flex-end; padding-right: 15px;
     }
-    
     .custom-name-text {
-        font-family: 'Segoe UI', sans-serif;
-        font-weight: 600;
-        font-size: 0.85rem;
-        color: #1565C0;
-        background-color: #f0f7ff;
-        padding: 4px 12px;
-        border-radius: 12px;
-        pointer-events: none;
-        user-select: none;
+        font-family: 'Segoe UI', sans-serif; font-weight: 600; font-size: 0.85rem;
+        color: #1565C0; background-color: #f0f7ff; padding: 4px 12px; border-radius: 12px;
+        pointer-events: none; user-select: none;
     }
 
     /* 4. GIAO DIỆN APP */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
-    
     .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
-    
     .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
     .amt-text { font-weight: bold; font-size: 1rem; }
-    
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
 </style>
-
-<div class="custom-header-name">
-    <span class="custom-name-text">TUẤN VDS.HCM</span>
-</div>
+<div class="custom-header-name"><span class="custom-name-text">TUẤN VDS.HCM</span></div>
 """, unsafe_allow_html=True)
 
-# --- KẾT NỐI API ---
+# --- KẾT NỐI API (TỐI ƯU CACHE RESOURCE) ---
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
+@st.cache_resource # <--- Cache kết nối (Chỉ chạy 1 lần)
 def get_creds():
     return Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPES)
+
+@st.cache_resource # <--- Cache client Gspread (Chỉ chạy 1 lần)
 def get_gs_client():
     return gspread.authorize(get_creds())
 
@@ -129,6 +93,7 @@ def format_vnd(amount):
 # --- XỬ LÝ SỐ LIỆU ---
 def process_report_data(df, start_date=None, end_date=None):
     if df.empty: return pd.DataFrame()
+    # Tính toán trên bản sao để không ảnh hưởng dữ liệu gốc
     df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
@@ -158,7 +123,6 @@ def process_report_data(df, start_date=None, end_date=None):
 
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# --- EXCEL CUSTOM ---
 def convert_df_to_excel_custom(df_report):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -201,7 +165,7 @@ def convert_df_to_excel_custom(df_report):
         worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
     return output.getvalue()
 
-# --- DRIVE & CRUD ---
+# --- DRIVE & CRUD (TỐI ƯU CACHE DATA) ---
 def upload_image_to_drive(image_file, file_name):
     try:
         creds = get_creds()
@@ -212,6 +176,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
+@st.cache_data(ttl=300) # <--- Tự động làm mới dữ liệu sau 300 giây (5 phút) nếu không có thao tác
 def load_data_with_index():
     try:
         client = get_gs_client()
@@ -225,21 +190,28 @@ def load_data_with_index():
         return df
     except: return pd.DataFrame()
 
+# --- HÀM CLEAR CACHE KHI CÓ THAY ĐỔI ---
+def clear_data_cache():
+    st.cache_data.clear()
+
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
+    clear_data_cache() # <--- Xóa cache ngay sau khi thêm
 
 def update_transaction(row_idx, date, category, amount, description, image_link):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     r = int(row_idx)
     sheet.update(f"A{r}:E{r}", [[date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link]])
+    clear_data_cache() # <--- Xóa cache sau khi sửa
 
 def delete_transaction(row_idx):
     client = get_gs_client()
     sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx))
+    clear_data_cache() # <--- Xóa cache sau khi xóa
 
 # ==================== VIEW MODULES ====================
 
@@ -260,7 +232,9 @@ def render_input_form():
         
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
-        img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed") if cam_mode else st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+        img_data = None
+        if cam_mode: img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed")
+        else: img_data = st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
@@ -298,7 +272,9 @@ def render_report_table(df):
     start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
     
+    # Process data with simple logic first to avoid blocking UI
     df_report = process_report_data(df, start_d, end_d)
+    
     if not df_report.empty:
         def highlight(row): 
             if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
@@ -321,77 +297,4 @@ def render_history_list(df):
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
-        if not row_to_edit.empty:
-            row_data = row_to_edit.iloc[0]
-            with st.container(border=True):
-                st.info(f"✏️ Đang sửa: {row_data['MoTa']}")
-                ue1, ue2 = st.columns([1.5, 1])
-                ud_date = ue1.date_input("Ngày", value=row_data['Ngay'], key="u_d")
-                ud_type = ue2.selectbox("Loại", ["Chi", "Thu"], index=(0 if row_data['Loai'] == "Chi" else 1), key="u_t")
-                ud_amt = st.number_input("Tiền", value=int(row_data['SoTien']), step=1000, key="u_a")
-                ud_desc = st.text_input("Mô tả", value=row_data['MoTa'], key="u_desc")
-                b1, b2 = st.columns(2)
-                if b1.button("💾 LƯU", type="primary", use_container_width=True):
-                    update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
-                    st.session_state.edit_row_index = None; st.rerun()
-                if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
-
-    df_sorted = df.sort_values(by='Ngay', ascending=False)
-    h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
-    
-    for index, row in df_sorted.iterrows():
-        c1, c2, c3 = st.columns([2, 1, 1], gap="small")
-        with c1:
-            icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
-            st.markdown(f"<div class='desc-text'>{row['MoTa']}</div><div class='date-text'>{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
-            if row['HinhAnh']: st.markdown(f"<a href='{row['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
-        with c2:
-            color = "#27ae60" if row['Loai'] == 'Thu' else "#c0392b"
-            st.markdown(f"<div class='amt-text' style='color:{color}'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
-        with c3:
-            bc1, bc2 = st.columns(2)
-            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
-            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
-        st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
-
-def render_export(df):
-    st.write("📥 **Xuất Excel Sổ Quỹ**")
-    if not df.empty:
-        c1, c2 = st.columns(2)
-        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
-        if st.button("Tải File", type="primary", use_container_width=True):
-            df_r = process_report_data(df, d1, d2)
-            data = convert_df_to_excel_custom(df_r)
-            st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
-    else: st.info("Trống")
-
-# ==================== MAIN ====================
-df = load_data_with_index()
-total_thu = 0; total_chi = 0; balance = 0
-if not df.empty:
-    total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum()
-    total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
-    balance = total_thu - total_chi
-
-# TẠO SIDEBAR ĐỂ CHỨA NÚT CHUYỂN CHẾ ĐỘ
-with st.sidebar:
-    st.title("⚙️ Cài đặt")
-    layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
-    st.info("Phiên bản: 2.0 Pro")
-
-if "Laptop" in layout_mode:
-    col_left, col_right = st.columns([1, 1.8], gap="medium")
-    with col_left: render_input_form()
-    with col_right:
-        render_dashboard_box(balance, total_thu, total_chi)
-        pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
-        with pc_tab1: render_report_table(df)
-        with pc_tab2: render_history_list(df)
-        with pc_tab3: render_export(df)
-else:
-    render_dashboard_box(balance, total_thu, total_chi)
-    m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
-    with m_tab1: render_input_form()
-    with m_tab2: render_history_list(df)
-    with m_tab3: render_report_table(df)
-    with m_tab4: render_export(df)
+        if not row_to_edit.empty
