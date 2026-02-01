@@ -297,4 +297,86 @@ def render_history_list(df):
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
-        if not row_to_edit.empty
+        if not row_to_edit.empty:
+            row_data = row_to_edit.iloc[0]
+            with st.container(border=True):
+                st.info(f"✏️ Đang sửa: {row_data['MoTa']}")
+                ue1, ue2 = st.columns([1.5, 1])
+                ud_date = ue1.date_input("Ngày", value=row_data['Ngay'], key="u_d")
+                ud_type = ue2.selectbox("Loại", ["Chi", "Thu"], index=(0 if row_data['Loai'] == "Chi" else 1), key="u_t")
+                ud_amt = st.number_input("Tiền", value=int(row_data['SoTien']), step=1000, key="u_a")
+                ud_desc = st.text_input("Mô tả", value=row_data['MoTa'], key="u_desc")
+                b1, b2 = st.columns(2)
+                if b1.button("💾 LƯU", type="primary", use_container_width=True):
+                    update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
+                    st.session_state.edit_row_index = None; st.rerun()
+                if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
+
+    df_sorted = df.sort_values(by='Ngay', ascending=False)
+    h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
+    
+    # Chỉ hiển thị tối đa 50 giao dịch gần nhất để tránh lag nếu danh sách quá dài
+    for index, row in df_sorted.head(50).iterrows():
+        c1, c2, c3 = st.columns([2, 1, 1], gap="small")
+        with c1:
+            icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
+            st.markdown(f"<div class='desc-text'>{row['MoTa']}</div><div class='date-text'>{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
+            if row['HinhAnh']: st.markdown(f"<a href='{row['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
+        with c2:
+            color = "#27ae60" if row['Loai'] == 'Thu' else "#c0392b"
+            st.markdown(f"<div class='amt-text' style='color:{color}'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
+        with c3:
+            bc1, bc2 = st.columns(2)
+            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
+            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
+        st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
+    
+    if len(df) > 50:
+        st.caption("... và còn nhiều giao dịch cũ hơn (đã ẩn để tối ưu tốc độ)")
+
+def render_export(df):
+    st.write("📥 **Xuất Excel Sổ Quỹ**")
+    if not df.empty:
+        c1, c2 = st.columns(2)
+        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
+        if st.button("Tải File", type="primary", use_container_width=True):
+            with st.spinner("Đang xử lý xuất file..."):
+                df_r = process_report_data(df, d1, d2)
+                data = convert_df_to_excel_custom(df_r)
+            st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
+    else: st.info("Trống")
+
+# ==================== MAIN ====================
+# Tải dữ liệu từ Cache (Nhanh hơn rất nhiều)
+df = load_data_with_index()
+
+total_thu = 0; total_chi = 0; balance = 0
+if not df.empty:
+    total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum()
+    total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
+    balance = total_thu - total_chi
+
+with st.sidebar:
+    st.title("⚙️ Cài đặt")
+    layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
+    if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
+        clear_data_cache()
+        st.rerun()
+    st.info("Phiên bản: 2.1 Fast")
+
+if "Laptop" in layout_mode:
+    col_left, col_right = st.columns([1, 1.8], gap="medium")
+    with col_left: render_input_form()
+    with col_right:
+        render_dashboard_box(balance, total_thu, total_chi)
+        pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
+        with pc_tab1: render_report_table(df)
+        with pc_tab2: render_history_list(df)
+        with pc_tab3: render_export(df)
+else:
+    render_dashboard_box(balance, total_thu, total_chi)
+    m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
+    with m_tab1: render_input_form()
+    with m_tab2: render_history_list(df)
+    with m_tab3: render_report_table(df)
+    with m_tab4: render_export(df)
