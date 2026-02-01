@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-from datetime import datetime, timedelta # <--- Thêm thư viện timedelta để trừ ngày
+from datetime import datetime, timedelta
 import time
 from io import BytesIO
 import unicodedata
@@ -18,12 +18,15 @@ st.markdown("""
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     
+    /* Camera Full Width */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
     
+    /* Balance Box */
     .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
     
+    /* Compact History List */
     .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
@@ -59,13 +62,18 @@ def format_vnd(amount):
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- XỬ LÝ DỮ LIỆU ---
+# --- XỬ LÝ SỐ LIỆU (SMART REPORT) ---
 def process_report_data(df, start_date=None, end_date=None):
     if df.empty: return pd.DataFrame()
+    
+    # 1. Sắp xếp toàn bộ dữ liệu
     df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
+    
+    # 2. Tính số dư lũy kế toàn lịch sử
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
 
+    # 3. Lọc theo khoảng thời gian và chèn dòng Số dư đầu kỳ
     if start_date and end_date:
         mask_before = df_all['Ngay'].dt.date < start_date
         df_before = df_all[mask_before]
@@ -84,9 +92,11 @@ def process_report_data(df, start_date=None, end_date=None):
 
     df_proc['STT'] = range(1, len(df_proc) + 1)
     df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
+    
     def get_date_str(row):
         if row['Loai'] == 'Open' or pd.isna(row['Ngay']): return "" 
         return row['Ngay'].strftime('%d/%m/%Y')
+
     df_proc['NgayChi'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Chi' else "", axis=1)
     df_proc['NgayNhan'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Thu' else "", axis=1)
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
@@ -117,6 +127,7 @@ def convert_df_to_excel_custom(df_report):
             r = i + 1
             loai = row['Loai']
             bal = row['ConLai']
+            
             if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
@@ -137,7 +148,7 @@ def convert_df_to_excel_custom(df_report):
         worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
     return output.getvalue()
 
-# --- DRIVE ---
+# --- DRIVE & CRUD ---
 def upload_image_to_drive(image_file, file_name):
     try:
         creds = get_creds()
@@ -148,7 +159,6 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# --- CRUD ---
 def load_data_with_index():
     try:
         client = get_gs_client()
@@ -195,6 +205,7 @@ def render_input_form():
         st.write("📝 **Nội dung:**")
         d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
         
+        # Camera mặc định tắt
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
         img_data = None
@@ -216,8 +227,13 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
+    # --- CẬP NHẬT: Thêm dòng tiêu đề nổi bật ở đây ---
     st.markdown(f"""
         <div class="balance-box">
+            <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+                HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN
+            </div>
+            
             <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
             <div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
             <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
@@ -230,25 +246,24 @@ def render_dashboard_box(bal, thu, chi):
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
     
-    # --- LOGIC MẶC ĐỊNH 30 NGÀY ---
+    # Mặc định hiển thị 30 ngày gần nhất
     today = datetime.now()
-    thirty_days_ago = today - timedelta(days=30)
+    d30 = today - timedelta(days=30)
     
     col_d1, col_d2 = st.columns(2)
-    start_d = col_d1.date_input("Từ ngày", value=thirty_days_ago, key="v_start")
+    start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
     
     df_report = process_report_data(df, start_d, end_d)
-    
     if not df_report.empty:
-        def highlight_rows(row): 
+        def highlight(row): 
             if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
             if row['Loai'] == 'Open': return ['background-color: #E0E0E0; font-style: italic'] * len(row)
             return [''] * len(row)
-        def color_negative_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
+        def color_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
 
         st.dataframe(
-            df_report.style.apply(highlight_rows, axis=1).map(color_negative_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}),
+            df_report.style.apply(highlight, axis=1).map(color_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}),
             column_config={"STT": st.column_config.NumberColumn("STT", width="small"), "Khoan": st.column_config.TextColumn("Khoản", width="large"), "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", "SoTienShow": "Số tiền", "ConLai": "Còn lại", "Loai": None},
             hide_index=True, use_container_width=True, height=500
         )
@@ -258,6 +273,8 @@ def render_report_table(df):
 
 def render_history_list(df):
     if df.empty: st.info("Trống"); return
+    
+    # Form Sửa
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
@@ -271,16 +288,15 @@ def render_history_list(df):
                 ud_amt = st.number_input("Tiền", value=int(row_data['SoTien']), step=1000, key="u_a")
                 ud_desc = st.text_input("Mô tả", value=row_data['MoTa'], key="u_desc")
                 b1, b2 = st.columns(2)
-                if b1.button("💾 LƯU LẠI", type="primary", use_container_width=True):
+                if b1.button("💾 LƯU", type="primary", use_container_width=True):
                     update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
                     st.session_state.edit_row_index = None; st.rerun()
-                if b2.button("❌ HỦY", use_container_width=True):
-                    st.session_state.edit_row_index = None; st.rerun()
+                if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
 
+    # Danh sách gọn nhẹ (Compact)
     df_sorted = df.sort_values(by='Ngay', ascending=False)
-    h1, h2, h3 = st.columns([2, 1, 1])
-    h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
-
+    h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
+    
     for index, row in df_sorted.iterrows():
         c1, c2, c3 = st.columns([2, 1, 1], gap="small")
         with c1:
@@ -296,23 +312,18 @@ def render_history_list(df):
             if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
         st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
 
-def render_export_tab(df):
-    st.write("📥 **Xuất file Excel Sổ Quỹ**")
+def render_export(df):
+    st.write("📥 **Xuất Excel Sổ Quỹ**")
     if not df.empty:
         c1, c2 = st.columns(2)
-        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ex_d1")
-        d2 = c2.date_input("Đến", datetime.now(), key="ex_d2")
-        if st.button("Tải Sổ Quỹ (Excel)", type="primary", use_container_width=True):
-            df_rep = process_report_data(df, d1, d2)
-            if df_rep.empty: st.warning("Không có dữ liệu")
-            else:
-                data = convert_df_to_excel_custom(df_rep)
-                fname = f"SoQuy_{d1.strftime('%d%m')}_{d2.strftime('%d%m')}.xlsx"
-                st.download_button("⬇️ TẢI NGAY", data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
+        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
+        if st.button("Tải File", type="primary", use_container_width=True):
+            df_r = process_report_data(df, d1, d2)
+            data = convert_df_to_excel_custom(df_r)
+            st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
     else: st.info("Trống")
 
-# ==================== MAIN APP LOGIC ====================
-
+# ==================== MAIN ====================
 df = load_data_with_index()
 total_thu = 0; total_chi = 0; balance = 0
 if not df.empty:
@@ -331,11 +342,11 @@ if "Laptop" in layout_mode:
         pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
         with pc_tab1: render_report_table(df)
         with pc_tab2: render_history_list(df)
-        with pc_tab3: render_export_tab(df)
+        with pc_tab3: render_export(df)
 else:
     render_dashboard_box(balance, total_thu, total_chi)
     m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
     with m_tab1: render_input_form()
     with m_tab2: render_history_list(df)
     with m_tab3: render_report_table(df)
-    with m_tab4: render_export_tab(df)
+    with m_tab4: render_export(df)
