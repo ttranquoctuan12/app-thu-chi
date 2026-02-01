@@ -8,11 +8,12 @@ from datetime import datetime, timedelta
 import time
 from io import BytesIO
 import unicodedata
+import pytz
 
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU ---
+# --- 2. CSS TỐI ƯU GIAO DIỆN & ẨN ICON THỪA ---
 st.markdown("""
 <style>
     /* 1. Cấu hình lề trang */
@@ -23,43 +24,62 @@ st.markdown("""
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG */
-    header { background-color: transparent !important; }
-    [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; z-index: 999999; color: #333; }
+    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG (Header, Toolbar, Deploy Button) */
     
+    /* Ẩn dải màu trang trí trên cùng */
     [data-testid="stDecoration"] { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; }
-    [data-testid="stHeaderActionElements"] { display: none !important; }
-    .stAppDeployButton { display: none !important; }
+    
+    /* Ẩn TOÀN BỘ cụm nút bên phải (Fork, GitHub, Menu 3 chấm) */
+    [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
+    [data-testid="stHeaderActionElements"] { display: none !important; visibility: hidden !important; }
+    
+    /* Ẩn nút "Deploy" (Vương miện/Tên lửa) ở góc phải */
+    .stAppDeployButton { display: none !important; visibility: hidden !important; }
+    
+    /* Ẩn Widget trạng thái (Running/Stop) */
     [data-testid="stStatusWidget"] { display: none !important; }
+    
+    /* Ẩn Footer và Menu mặc định */
     footer { display: none !important; }
     #MainMenu { display: none !important; }
 
-    /* 3. TÊN RIÊNG (GÓC PHẢI) */
-    .custom-header-name {
-        position: fixed; top: 0; right: 0; width: 100%; height: 40px;
-        background-color: rgba(255, 255, 255, 0.9); z-index: 99999;
-        border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: flex-end; padding-right: 15px;
+    /* QUAN TRỌNG: Làm trong suốt Header để không che nội dung, nhưng vẫn giữ nút Sidebar */
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
+        z-index: 1; /* Thấp hơn nội dung */
     }
-    .custom-name-text {
-        font-family: 'Segoe UI', sans-serif; font-weight: 600; font-size: 0.85rem;
-        color: #1565C0; background-color: #f0f7ff; padding: 4px 12px; border-radius: 12px;
-        pointer-events: none; user-select: none;
+    
+    /* Đảm bảo nút mở Sidebar (góc trái) luôn hiện rõ và bấm được */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        z-index: 999999; /* Đẩy lên lớp trên cùng */
+        color: #333; /* Màu đen cho dễ nhìn */
     }
 
-    /* 4. GIAO DIỆN APP */
+    /* 3. GIAO DIỆN APP */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
-    .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
+    
+    .balance-box { 
+        padding: 15px; 
+        border-radius: 12px; 
+        background-color: #f8f9fa; 
+        border: 1px solid #e0e0e0; 
+        margin-bottom: 20px; 
+        text-align: center;
+        position: relative; /* Để căn chỉnh chữ ký tuyệt đối bên trong */
+    }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
+    
     .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
     .amt-text { font-weight: bold; font-size: 1rem; }
+    
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
 </style>
-<div class="custom-header-name"><span class="custom-name-text">TUẤN VDS.HCM</span></div>
 """, unsafe_allow_html=True)
 
 # --- KẾT NỐI API ---
@@ -72,6 +92,10 @@ def get_creds():
 @st.cache_resource
 def get_gs_client():
     return gspread.authorize(get_creds())
+
+# --- CẤU HÌNH MÚI GIỜ VIỆT NAM ---
+def get_vn_time():
+    return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
 
 # --- TIỆN ÍCH ---
 def remove_accents(input_str):
@@ -122,82 +146,55 @@ def process_report_data(df, start_date=None, end_date=None):
 
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# --- EXCEL CUSTOM (CẤU TRÚC MỚI: 4 DÒNG HEADER) ---
+# --- EXCEL CUSTOM (UPDATE GIỜ VN) ---
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         
-        # --- ĐỊNH DẠNG (STYLES) ---
-        fmt_title = workbook.add_format({
-            'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'
-        })
-        fmt_subtitle = workbook.add_format({
-            'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'
-        })
-        # Định dạng cho dòng thông tin hệ thống và người tạo
-        fmt_info = workbook.add_format({
-            'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True
-        })
+        # --- ĐỊNH DẠNG ---
+        fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
+        fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
+        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'})
         
-        # Header bảng
-        fmt_header = workbook.add_format({
-            'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 
-            'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'
-        })
-        
-        # Dữ liệu
         fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
         fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        
         fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
         fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        
         fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
         fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        
         fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
         fmt_orange = workbook.add_format({'border': 1, 'num_format': '#,##0', 'bg_color': '#FF9900', 'bold': True, 'font_size': 11, 'valign': 'vcenter'}) 
-        
         fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter'})
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
 
         worksheet = workbook.add_worksheet("SoQuy")
         
-        # --- HEADER EXCEL (4 DÒNG ĐẦU) ---
-        # 1. QUYẾT TOÁN (Size 26)
+        # --- HEADER ---
         worksheet.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         
-        # 2. Thời gian (Size 14)
         date_str = f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}"
         worksheet.merge_range('A2:F2', date_str, fmt_subtitle)
         
-        # 3. Thông tin hệ thống (Mới)
-        current_time_str = datetime.now().strftime("%H:%M %d/%m/%Y")
+        # Lấy giờ Việt Nam để in vào file
+        current_time_str = get_vn_time().strftime("%H:%M %d/%m/%Y")
         sys_info = f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}"
         worksheet.merge_range('A3:F3', sys_info, fmt_info)
         
-        # 4. Người tạo (Mới)
         creator_info = "Người tạo: TUẤN VDS.HCM"
         worksheet.merge_range('A4:F4', creator_info, fmt_info)
         
-        # 5. Tiêu đề bảng (Dòng 5)
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
-        header_row_idx = 4
-        for c, h in enumerate(headers): 
-            worksheet.write(header_row_idx, c, h, fmt_header)
+        for c, h in enumerate(headers): worksheet.write(4, c, h, fmt_header)
         
-        # Set độ rộng
-        worksheet.set_column('A:A', 6); worksheet.set_column('B:B', 40)
-        worksheet.set_column('C:D', 15); worksheet.set_column('E:F', 18)
+        worksheet.set_column('A:A', 6); worksheet.set_column('B:B', 40); worksheet.set_column('C:D', 15); worksheet.set_column('E:F', 18)
 
-        # --- DỮ LIỆU ---
         start_row_idx = 5
         for i, row in df_report.iterrows():
             r = start_row_idx + i
             loai = row['Loai']
             bal = row['ConLai']
-            
             if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
@@ -210,16 +207,12 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
             else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
             worksheet.write(r, 5, bal, bal_fmt)
             
-        # TỔNG
         l_row = start_row_idx + len(df_report)
         fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
         worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot)
         worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
         
-        # Chỉnh chiều cao dòng
-        worksheet.set_row(0, 40) # Tiêu đề to
-        worksheet.set_row(1, 25)
-        worksheet.set_row(4, 30) # Header bảng
+        worksheet.set_row(0, 40); worksheet.set_row(1, 25); worksheet.set_row(4, 30)
 
     return output.getvalue()
 
@@ -279,7 +272,8 @@ def render_input_form():
         if 'new_desc' not in st.session_state: st.session_state.new_desc = ""
 
         c1, c2 = st.columns([1.5, 1])
-        d_date = c1.date_input("Ngày", datetime.now(), key="d_new", label_visibility="collapsed")
+        # SỬA LỖI: Dùng giờ VN làm mặc định
+        d_date = c1.date_input("Ngày", get_vn_time(), key="d_new", label_visibility="collapsed")
         d_type = c2.selectbox("Loại", ["Chi", "Thu"], key="t_new", label_visibility="collapsed")
         
         st.write("💰 **Số tiền:**")
@@ -289,9 +283,7 @@ def render_input_form():
         
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
-        img_data = None
-        if cam_mode: img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed")
-        else: img_data = st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+        img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed") if cam_mode else st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
@@ -308,6 +300,7 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
+    # SỬA: Đưa chữ TUẤN VDS.HCM vào bên trong hộp (Góc dưới phải)
     st.markdown(f"""
 <div class="balance-box">
     <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
@@ -319,12 +312,20 @@ def render_dashboard_box(bal, thu, chi):
         <div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
         <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
     </div>
+    
+    <div style="position: absolute; bottom: 5px; right: 10px; font-size: 0.7rem; color: #aaa; font-style: italic; font-weight: bold; background-color: #f0f7ff; padding: 2px 6px; border-radius: 4px;">
+        TUẤN VDS.HCM
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    today = datetime.now(); d30 = today - timedelta(days=30)
+    
+    # SỬA LỖI: Mặc định 30 ngày theo giờ VN
+    today = get_vn_time()
+    d30 = today - timedelta(days=30)
+    
     col_d1, col_d2 = st.columns(2)
     start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
@@ -370,7 +371,7 @@ def render_history_list(df):
     df_sorted = df.sort_values(by='Ngay', ascending=False)
     h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
     
-    for index, row in df_sorted.iterrows():
+    for index, row in df_sorted.head(50).iterrows():
         c1, c2, c3 = st.columns([2, 1, 1], gap="small")
         with c1:
             icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
@@ -412,7 +413,7 @@ with st.sidebar:
     layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
         clear_data_cache(); st.rerun()
-    st.info("Phiên bản: 2.3 Final")
+    st.info("Phiên bản: 2.5 Clean UX")
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
