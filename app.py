@@ -12,22 +12,43 @@ import unicodedata
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU ---
+# --- 2. CSS TỐI ƯU (ĐẨY NỘI DUNG LÊN CAO NHẤT) ---
 st.markdown("""
 <style>
-    .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    /* 1. Kéo nội dung sát lên mép trên */
+    .block-container { 
+        padding-top: 0rem !important; /* Không chừa lề trên */
+        padding-bottom: 3rem !important; 
+        padding-left: 0.5rem !important; 
+        padding-right: 0.5rem !important; 
+        margin-top: -1rem !important; /* Kéo ngược lên để che header */
+    }
+    
+    /* 2. Ẩn hoàn toàn Header và Menu mặc định của Streamlit */
+    #MainMenu {visibility: hidden;} 
+    footer {visibility: hidden;} 
+    header {visibility: hidden;} 
     
     /* Camera Full Width */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
     
-    /* Balance Box */
-    .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
-    .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
+    /* Balance Box Styling */
+    .balance-box { 
+        padding: 20px 15px; /* Tăng padding chút cho thoáng */
+        border-radius: 0 0 20px 20px; /* Bo tròn 2 góc dưới */
+        background: linear-gradient(to bottom, #f8f9fa, #ffffff); /* Hiệu ứng gradient nhẹ */
+        border-bottom: 1px solid #e0e0e0; 
+        border-left: 1px solid #f0f0f0;
+        border-right: 1px solid #f0f0f0;
+        margin-bottom: 20px; 
+        text-align: center; 
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .balance-text { font-size: 2.2rem !important; font-weight: 800; margin: 10px 0; }
     
-    /* Compact History List */
-    .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
+    /* List & Form Styling */
+    .history-row { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
     .amt-text { font-weight: bold; font-size: 1rem; }
@@ -62,18 +83,13 @@ def format_vnd(amount):
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- XỬ LÝ SỐ LIỆU (SMART REPORT) ---
+# --- XỬ LÝ SỐ LIỆU ---
 def process_report_data(df, start_date=None, end_date=None):
     if df.empty: return pd.DataFrame()
-    
-    # 1. Sắp xếp toàn bộ dữ liệu
     df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
-    
-    # 2. Tính số dư lũy kế toàn lịch sử
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
 
-    # 3. Lọc theo khoảng thời gian và chèn dòng Số dư đầu kỳ
     if start_date and end_date:
         mask_before = df_all['Ngay'].dt.date < start_date
         df_before = df_all[mask_before]
@@ -92,11 +108,9 @@ def process_report_data(df, start_date=None, end_date=None):
 
     df_proc['STT'] = range(1, len(df_proc) + 1)
     df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
-    
     def get_date_str(row):
         if row['Loai'] == 'Open' or pd.isna(row['Ngay']): return "" 
         return row['Ngay'].strftime('%d/%m/%Y')
-
     df_proc['NgayChi'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Chi' else "", axis=1)
     df_proc['NgayNhan'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Thu' else "", axis=1)
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
@@ -127,7 +141,6 @@ def convert_df_to_excel_custom(df_report):
             r = i + 1
             loai = row['Loai']
             bal = row['ConLai']
-            
             if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
@@ -205,7 +218,6 @@ def render_input_form():
         st.write("📝 **Nội dung:**")
         d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
         
-        # Camera mặc định tắt
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
         img_data = None
@@ -227,7 +239,7 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # --- SỬA LỖI Ở ĐÂY: Loại bỏ thụt đầu dòng (indent) trong chuỗi HTML ---
+    # HTML căn chỉnh sát lề để tránh lỗi hiển thị
     html_content = f"""
 <div class="balance-box">
     <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
@@ -245,14 +257,10 @@ def render_dashboard_box(bal, thu, chi):
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    
-    # Mặc định hiển thị 30 ngày gần nhất
-    today = datetime.now()
-    d30 = today - timedelta(days=30)
-    
-    col_d1, col_d2 = st.columns(2)
-    start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
-    end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
+    today = datetime.now(); d30 = today - timedelta(days=30)
+    col1, col2 = st.columns(2)
+    start_d = col1.date_input("Từ ngày", value=d30, key="v_start")
+    end_d = col2.date_input("Đến ngày", value=today, key="v_end")
     
     df_report = process_report_data(df, start_d, end_d)
     if not df_report.empty:
@@ -268,13 +276,12 @@ def render_report_table(df):
             hide_index=True, use_container_width=True, height=500
         )
         final_bal = df_report['ConLai'].iloc[-1]
-        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
     else: st.warning("Không có dữ liệu.")
 
 def render_history_list(df):
     if df.empty: st.info("Trống"); return
     
-    # Form Sửa
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
@@ -293,7 +300,6 @@ def render_history_list(df):
                     st.session_state.edit_row_index = None; st.rerun()
                 if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
 
-    # Danh sách gọn nhẹ (Compact)
     df_sorted = df.sort_values(by='Ngay', ascending=False)
     h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
     
@@ -324,6 +330,14 @@ def render_export(df):
     else: st.info("Trống")
 
 # ==================== MAIN ====================
+# --- DI CHUYỂN NÚT CHỌN GIAO DIỆN VÀO SIDEBAR ---
+with st.sidebar:
+    st.header("⚙️ Cài đặt")
+    layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
+    st.divider()
+    st.caption("Phiên bản v2.0 - Optimized")
+
+# --- NỘI DUNG CHÍNH ---
 df = load_data_with_index()
 total_thu = 0; total_chi = 0; balance = 0
 if not df.empty:
@@ -331,9 +345,7 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"], horizontal=True)
-st.divider()
-
+# Hiển thị Dashboard ngay lập tức (không có header đè)
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
     with col_left: render_input_form()
@@ -344,6 +356,7 @@ if "Laptop" in layout_mode:
         with pc_tab2: render_history_list(df)
         with pc_tab3: render_export(df)
 else:
+    # Mobile View
     render_dashboard_box(balance, total_thu, total_chi)
     m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
     with m_tab1: render_input_form()
