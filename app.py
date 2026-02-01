@@ -239,21 +239,60 @@ def delete_transaction(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== VIEW MODULES ====================
+# ==================== VIEW MODULES (CẬP NHẬT TỰ ĐỘNG ĐIỀN) ====================
 
 def render_input_form():
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
+        
+        # --- HÀM TỰ ĐỘNG ĐIỀN (CALLBACK) ---
+        def auto_fill_callback():
+            # Lấy nội dung từ ô nhập liệu (chuyển về chữ thường để so sánh)
+            content = st.session_state.desc_new.lower()
+            
+            # Logic: Nếu có chữ "công tác phí"
+            if "công tác phí" in content:
+                st.session_state.a_new = 150000  # Tự điền 150.000
+                st.session_state.t_new = "Chi"   # Tự chuyển sang loại "Chi"
+                st.toast("💡 Đã tự động điền 150k công tác phí!")
+
+        # Khởi tạo session state nếu chưa có
         if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
         if 'new_desc' not in st.session_state: st.session_state.new_desc = ""
+
         c1, c2 = st.columns([1.5, 1])
+        # Ngày tháng (Giờ VN)
         d_date = c1.date_input("Ngày", get_vn_time(), key="d_new", label_visibility="collapsed")
+        
+        # Loại (Chi/Thu) - Thêm key="t_new" để code có thể tự động thay đổi
         d_type = c2.selectbox("Loại", ["Chi", "Thu"], key="t_new", label_visibility="collapsed")
-        st.write("💰 **Số tiền:**"); d_amount = st.number_input("Số tiền", min_value=0, step=5000, value=st.session_state.new_amount, key="a_new", label_visibility="collapsed")
-        st.write("📝 **Nội dung:**"); d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
+        
+        st.write("📝 **Nội dung:**")
+        # THÊM on_change=auto_fill_callback VÀO ĐÂY
+        d_desc = st.text_input(
+            "Mô tả", 
+            value=st.session_state.new_desc, 
+            key="desc_new", 
+            placeholder="VD: Ăn sáng, Công tác phí...", 
+            label_visibility="collapsed",
+            on_change=auto_fill_callback  # <--- KÍCH HOẠT TỰ ĐỘNG ĐIỀN
+        )
+        
+        st.write("💰 **Số tiền:**")
+        # Thêm key="a_new" để code có thể tự động điền tiền vào đây
+        d_amount = st.number_input(
+            "Số tiền", 
+            min_value=0, 
+            step=5000, 
+            value=st.session_state.new_amount, 
+            key="a_new", 
+            label_visibility="collapsed"
+        )
+        
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
         img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed") if cam_mode else st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
             if d_amount > 0 and d_desc.strip() != "":
@@ -263,7 +302,15 @@ def render_input_form():
                         fname = f"{d_date.strftime('%Y%m%d')}_{remove_accents(d_desc)}.jpg"
                         link = upload_image_to_drive(img_data, fname)
                     add_transaction(d_date, d_type, d_amount, d_desc, link)
-                st.success("Đã lưu!"); st.session_state.new_amount = 0; st.session_state.new_desc = ""; time.sleep(0.5); st.rerun()
+                st.success("Đã lưu!")
+                # Reset form
+                st.session_state.new_amount = 0
+                st.session_state.new_desc = ""
+                # Reset các widget inputs bằng cách clear session keys cụ thể
+                st.session_state.a_new = 0
+                st.session_state.desc_new = ""
+                time.sleep(0.5)
+                st.rerun()
             else: st.warning("Thiếu thông tin!")
 
 def render_dashboard_box(bal, thu, chi):
@@ -388,3 +435,4 @@ else:
 
 # FOOTER CUỐI TRANG
 st.markdown("<div class='app-footer'>Phiên bản: 3.0 UX Ultimate - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+
