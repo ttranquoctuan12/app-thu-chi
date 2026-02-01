@@ -12,102 +12,73 @@ import unicodedata
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (CHẾ ĐỘ ẨN TUYỆT ĐỐI) ---
+# --- 2. CSS TỐI ƯU (FIX LỖI HEADER & THU NHỎ TÊN) ---
 st.markdown("""
 <style>
-    /* 1. ĐIỀU CHỈNH LỀ TRANG */
+    /* 1. Cấu hình lề trang */
     .block-container { 
-        padding-top: 1.5rem !important; 
+        padding-top: 1rem !important; 
         padding-bottom: 3rem !important; 
         padding-left: 0.5rem !important; 
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. ẨN TOÀN BỘ HEADER VÀ TOOLBAR (KHU VỰC CHỨA NÚT FORK/GITHUB) */
-    
-    /* Ẩn thẻ Header chính */
-    header {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0px !important;
-    }
-    
-    /* Ẩn thanh công cụ (Toolbar) chứa các nút tác vụ */
-    [data-testid="stToolbar"] {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0px !important;
-    }
-    
-    /* Ẩn cụm nút hành động góc phải (Fork, Menu, v.v...) */
-    [data-testid="stHeaderActionElements"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-
-    /* Ẩn thanh trang trí màu sắc trên cùng */
-    [data-testid="stDecoration"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-
-    /* 3. ẨN CÁC NÚT DEPLOY/MANAGE APP (KHU VỰC DƯỚI) */
-    
-    /* Ẩn nút Deploy (Vương miện/Tên lửa) */
-    .stAppDeployButton, [data-testid="stAppDeployButton"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    
-    /* Ẩn Widget trạng thái (Người chạy/Dừng) */
-    [data-testid="stStatusWidget"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    
-    /* Ẩn Menu chính (3 gạch) và Footer */
+    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG */
+    header { display: none !important; visibility: hidden !important; }
+    [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
+    [data-testid="stHeaderActionElements"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    .stAppDeployButton { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
     #MainMenu { display: none !important; }
     footer { display: none !important; }
 
-    /* 4. CHÈN TÊN RIÊNG "TUẤN VDS.HCM" */
+    /* 3. CHÈN TÊN RIÊNG "TUẤN VDS.HCM" (NHỎ GỌN HƠN) */
     .custom-header-name {
         position: fixed;
         top: 0;
         right: 0;
-        width: 100%; /* Trải dài toàn màn hình */
-        height: 45px; /* Chiều cao cố định */
-        background-color: white; /* Nền trắng che hết phần Header cũ */
-        z-index: 99999999; /* Lớp cao nhất đè lên tất cả */
+        width: 100%;
+        height: 35px; /* Giảm chiều cao */
+        background-color: rgba(255, 255, 255, 0.95);
+        z-index: 99999999;
         border-bottom: 1px solid #eee;
         display: flex;
         align-items: center;
-        justify-content: flex-end; /* Căn phải */
-        padding-right: 20px;
+        justify-content: flex-end;
+        padding-right: 15px;
     }
     
     .custom-name-text {
-        font-family: 'Source Sans Pro', sans-serif;
-        font-weight: 700;
-        font-size: 1.1rem;
+        font-family: 'Segoe UI', sans-serif;
+        font-weight: 600; /* Giảm độ đậm */
+        font-size: 0.85rem; /* Giảm kích thước chữ (nhỏ gọn) */
         color: #1565C0;
         background-color: #f0f7ff;
-        padding: 5px 15px;
-        border-radius: 20px;
-        pointer-events: none; /* Không thể bấm */
+        padding: 3px 10px; /* Giảm padding */
+        border-radius: 12px;
+        pointer-events: none;
         user-select: none;
+        letter-spacing: 0.5px;
     }
 
-    /* 5. GIAO DIỆN APP */
+    /* 4. GIAO DIỆN APP */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
+    
     .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
+    
     .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
     .amt-text { font-weight: bold; font-size: 1rem; }
+    
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
+    
+    /* Chỉnh lại Sidebar cho gọn */
+    [data-testid="stSidebar"] { padding-top: 2rem; }
 </style>
 
 <div class="custom-header-name">
@@ -165,9 +136,7 @@ def process_report_data(df, start_date=None, end_date=None):
 
     df_proc['STT'] = range(1, len(df_proc) + 1)
     df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
-    def get_date_str(row):
-        if row['Loai'] == 'Open' or pd.isna(row['Ngay']): return "" 
-        return row['Ngay'].strftime('%d/%m/%Y')
+    def get_date_str(row): return "" if row['Loai'] == 'Open' or pd.isna(row['Ngay']) else row['Ngay'].strftime('%d/%m/%Y')
     df_proc['NgayChi'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Chi' else "", axis=1)
     df_proc['NgayNhan'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Thu' else "", axis=1)
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
@@ -206,8 +175,7 @@ def convert_df_to_excel_custom(df_report):
             worksheet.write(r, 1, row['Khoan'], c_fmt)
             worksheet.write(r, 2, row['NgayChi'], c_fmt)
             worksheet.write(r, 3, row['NgayNhan'], c_fmt)
-            if loai == 'Open': worksheet.write(r, 4, "", m_fmt)
-            else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
+            worksheet.write(r, 4, "" if loai=='Open' else row['SoTienShow'], m_fmt)
             worksheet.write(r, 5, bal, bal_fmt)
             
         l_row = len(df_report) + 1
@@ -275,12 +243,9 @@ def render_input_form():
         st.write("📝 **Nội dung:**")
         d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
         
-        # Camera mặc định tắt
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
-        img_data = None
-        if cam_mode: img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed")
-        else: img_data = st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+        img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed") if cam_mode else st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
@@ -297,8 +262,7 @@ def render_input_form():
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # Sửa lỗi thụt đầu dòng HTML lần trước
-    html_content = f"""
+    st.markdown(f"""
 <div class="balance-box">
     <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
         HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN
@@ -310,8 +274,7 @@ def render_dashboard_box(bal, thu, chi):
         <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
     </div>
 </div>
-"""
-    st.markdown(html_content, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
@@ -395,8 +358,8 @@ if not df.empty:
     total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
     balance = total_thu - total_chi
 
-layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"], horizontal=True)
-st.divider()
+# CHUYỂN RADIO VÀO SIDEBAR ĐỂ GIAO DIỆN CHÍNH THOÁNG HƠN
+layout_mode = st.sidebar.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
