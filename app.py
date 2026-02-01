@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-from datetime import datetime
+from datetime import datetime, timedelta # <--- Thêm thư viện timedelta để trừ ngày
 import time
 from io import BytesIO
 import unicodedata
@@ -12,33 +12,24 @@ import unicodedata
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (CẬP NHẬT GIAO DIỆN COMPACT) ---
+# --- 2. CSS TỐI ƯU ---
 st.markdown("""
 <style>
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     
-    /* Camera Full Width */
     [data-testid="stCameraInput"] { width: 100% !important; }
     [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
     
-    /* Balance Box */
     .balance-box { padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 20px; text-align: center; }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
     
-    /* COMPACT HISTORY LIST STYLING */
-    .history-row {
-        padding: 8px 0;
-        border-bottom: 1px solid #eee;
-    }
+    .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
     .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
     .date-text { font-size: 0.8rem; color: #888; }
     .amt-text { font-weight: bold; font-size: 1rem; }
     
-    /* Input Form Styling */
     .stTextInput input, .stNumberInput input { font-weight: bold; }
-    
-    /* Nút bấm nhỏ gọn trong danh sách */
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
 </style>
 """, unsafe_allow_html=True)
@@ -190,7 +181,6 @@ def delete_transaction(row_idx):
 # ==================== VIEW MODULES ====================
 
 def render_input_form():
-    """Form nhập liệu"""
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
         if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
@@ -239,9 +229,15 @@ def render_dashboard_box(bal, thu, chi):
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
+    
+    # --- LOGIC MẶC ĐỊNH 30 NGÀY ---
+    today = datetime.now()
+    thirty_days_ago = today - timedelta(days=30)
+    
     col_d1, col_d2 = st.columns(2)
-    start_d = col_d1.date_input("Từ ngày", datetime.now().replace(day=1), key="v_start")
-    end_d = col_d2.date_input("Đến ngày", datetime.now(), key="v_end")
+    start_d = col_d1.date_input("Từ ngày", value=thirty_days_ago, key="v_start")
+    end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
+    
     df_report = process_report_data(df, start_d, end_d)
     
     if not df_report.empty:
@@ -257,14 +253,11 @@ def render_report_table(df):
             hide_index=True, use_container_width=True, height=500
         )
         final_bal = df_report['ConLai'].iloc[-1]
-        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
     else: st.warning("Không có dữ liệu.")
 
 def render_history_list(df):
-    """Giao diện danh sách siêu gọn (Compact List)"""
     if df.empty: st.info("Trống"); return
-
-    # --- KHUNG SỬA GIAO DỊCH (Hiện lên đầu nếu bấm Sửa) ---
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
@@ -284,43 +277,23 @@ def render_history_list(df):
                 if b2.button("❌ HỦY", use_container_width=True):
                     st.session_state.edit_row_index = None; st.rerun()
 
-    # --- DANH SÁCH GIAO DỊCH (GIAO DIỆN MỚI) ---
     df_sorted = df.sort_values(by='Ngay', ascending=False)
-    
-    # Header nhỏ gọn
     h1, h2, h3 = st.columns([2, 1, 1])
-    h1.caption("Nội dung")
-    h2.caption("Số tiền")
-    h3.caption("Thao tác")
-    st.divider()
+    h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
 
     for index, row in df_sorted.iterrows():
-        # Dùng st.columns để chia dòng thành 3 phần, KHÔNG DÙNG CONTAINER CÓ VIỀN
         c1, c2, c3 = st.columns([2, 1, 1], gap="small")
-        
-        # Cột 1: Nội dung + Ngày tháng
         with c1:
             icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
-            st.markdown(f"""
-            <div class="desc-text">{row['MoTa']}</div>
-            <div class="date-text">{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='desc-text'>{row['MoTa']}</div><div class='date-text'>{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
             if row['HinhAnh']: st.markdown(f"<a href='{row['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
-        
-        # Cột 2: Số tiền
         with c2:
             color = "#27ae60" if row['Loai'] == 'Thu' else "#c0392b"
             st.markdown(f"<div class='amt-text' style='color:{color}'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
-            
-        # Cột 3: Nút Sửa / Xóa (Icon nhỏ)
         with c3:
             bc1, bc2 = st.columns(2)
-            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): 
-                st.session_state.edit_row_index = row['Row_Index']; st.rerun()
-            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): 
-                delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
-        
-        # Đường kẻ mờ phân cách
+            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
+            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
         st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
 
 def render_export_tab(df):
