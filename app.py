@@ -13,7 +13,7 @@ import pytz
 # --- 1. CẤU HÌNH TRANG ---
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
-# --- 2. CSS TỐI ƯU (FIX LỖI MẤT SIDEBAR & ẨN ICON) ---
+# --- 2. CSS TỐI ƯU (KHẮC PHỤC LỖI SIDEBAR VÀ HTML) ---
 st.markdown("""
 <style>
     /* 1. Cấu hình lề trang */
@@ -24,39 +24,29 @@ st.markdown("""
         padding-right: 0.5rem !important; 
     }
 
-    /* 2. ẨN CÁC THÀNH PHẦN HỆ THỐNG (Fork, GitHub, Deploy) */
-    
-    /* Ẩn dải màu trang trí */
+    /* 2. ẨN CÁC ICON THỪA (Fork, GitHub, Deploy...) */
     [data-testid="stDecoration"] { display: none !important; }
-    
-    /* Ẩn Toolbar (Chứa nút Fork, GitHub, 3 chấm) */
     [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
     [data-testid="stHeaderActionElements"] { display: none !important; }
-    
-    /* Ẩn nút Deploy */
     .stAppDeployButton { display: none !important; }
-    
-    /* Ẩn Footer/Menu */
+    [data-testid="stStatusWidget"] { display: none !important; }
     footer { display: none !important; }
     #MainMenu { display: none !important; }
 
-    /* 3. XỬ LÝ HEADER & SIDEBAR (QUAN TRỌNG) */
-    
-    /* Không được ẩn display:none header vì sẽ mất nút sidebar */
-    /* Chỉ làm nền trong suốt và đẩy xuống lớp dưới */
+    /* 3. KHẮC PHỤC LỖI MẤT NÚT SIDEBAR */
+    /* Làm header trong suốt để không che nội dung, nhưng VẪN HIỂN THỊ để chứa nút sidebar */
     header[data-testid="stHeader"] {
         background-color: transparent !important;
-        z-index: 1; 
+        z-index: 999;
     }
     
-    /* ÉP NÚT MỞ SIDEBAR HIỆN RA VÀ CÓ MÀU ĐEN */
+    /* Ép nút mở Sidebar (Hamburger menu) hiện rõ */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        z-index: 999999 !important; /* Lớp cao nhất */
-        color: #000000 !important; /* Màu đen để dễ nhìn */
-        top: 10px !important;
-        left: 10px !important;
+        color: #000000 !important; /* Màu đen */
+        background-color: rgba(255, 255, 255, 0.5); /* Nền trắng mờ nhẹ */
+        border-radius: 5px;
     }
 
     /* 4. GIAO DIỆN APP */
@@ -68,9 +58,8 @@ st.markdown("""
         border-radius: 12px; 
         background-color: #f8f9fa; 
         border: 1px solid #e0e0e0; 
-        margin-bottom: 20px; 
+        margin-bottom: 5px; /* Giảm margin dưới để chữ ký gần hơn */
         text-align: center;
-        position: relative; /* Để căn chỉnh chữ ký tuyệt đối bên trong */
     }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
     
@@ -81,20 +70,6 @@ st.markdown("""
     
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
-    
-    /* CSS cho chữ ký */
-    .signature-tag {
-        position: absolute;
-        bottom: 5px;
-        right: 10px;
-        font-size: 0.75rem;
-        color: #888;
-        font-weight: 700;
-        background-color: rgba(255,255,255,0.8);
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-family: sans-serif;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,7 +84,7 @@ def get_creds():
 def get_gs_client():
     return gspread.authorize(get_creds())
 
-# --- CẤU HÌNH MÚI GIỜ VIỆT NAM ---
+# --- CẤU HÌNH MÚI GIỜ VN ---
 def get_vn_time():
     return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
 
@@ -171,7 +146,6 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
         fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'})
-        
         fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
         fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
         fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
@@ -184,17 +158,12 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
 
         worksheet = workbook.add_worksheet("SoQuy")
-        
         worksheet.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         date_str = f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}"
         worksheet.merge_range('A2:F2', date_str, fmt_subtitle)
-        
         current_time_str = get_vn_time().strftime("%H:%M %d/%m/%Y")
-        sys_info = f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}"
-        worksheet.merge_range('A3:F3', sys_info, fmt_info)
-        
-        creator_info = "Người tạo: TUẤN VDS.HCM"
-        worksheet.merge_range('A4:F4', creator_info, fmt_info)
+        worksheet.merge_range('A3:F3', f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}", fmt_info)
+        worksheet.merge_range('A4:F4', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
         for c, h in enumerate(headers): worksheet.write(4, c, h, fmt_header)
@@ -203,25 +172,19 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         start_row_idx = 5
         for i, row in df_report.iterrows():
             r = start_row_idx + i
-            loai = row['Loai']
-            bal = row['ConLai']
+            loai = row['Loai']; bal = row['ConLai']
             if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
-
-            worksheet.write(r, 0, row['STT'], c_fmt)
-            worksheet.write(r, 1, row['Khoan'], c_fmt)
-            worksheet.write(r, 2, row['NgayChi'], c_fmt)
-            worksheet.write(r, 3, row['NgayNhan'], c_fmt)
+            worksheet.write(r, 0, row['STT'], c_fmt); worksheet.write(r, 1, row['Khoan'], c_fmt)
+            worksheet.write(r, 2, row['NgayChi'], c_fmt); worksheet.write(r, 3, row['NgayNhan'], c_fmt)
             if loai == 'Open': worksheet.write(r, 4, "", m_fmt)
             else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
             worksheet.write(r, 5, bal, bal_fmt)
             
         l_row = start_row_idx + len(df_report)
         fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
-        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot)
-        worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
-        
+        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot); worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
         worksheet.set_row(0, 40); worksheet.set_row(1, 25); worksheet.set_row(4, 30)
     return output.getvalue()
 
@@ -250,27 +213,21 @@ def load_data_with_index():
         return df
     except: return pd.DataFrame()
 
-def clear_data_cache():
-    st.cache_data.clear()
+def clear_data_cache(): st.cache_data.clear()
 
 def add_transaction(date, category, amount, description, image_link):
-    client = get_gs_client()
-    sheet = client.open("QuanLyThuChi").worksheet("data")
+    client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
     clear_data_cache()
 
 def update_transaction(row_idx, date, category, amount, description, image_link):
-    client = get_gs_client()
-    sheet = client.open("QuanLyThuChi").worksheet("data")
-    r = int(row_idx)
+    client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data"); r = int(row_idx)
     sheet.update(f"A{r}:E{r}", [[date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link]])
     clear_data_cache()
 
 def delete_transaction(row_idx):
-    client = get_gs_client()
-    sheet = client.open("QuanLyThuChi").worksheet("data")
-    sheet.delete_rows(int(row_idx))
-    clear_data_cache()
+    client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
+    sheet.delete_rows(int(row_idx)); clear_data_cache()
 
 # ==================== VIEW MODULES ====================
 
@@ -279,20 +236,14 @@ def render_input_form():
         st.subheader("➕ Nhập Giao Dịch")
         if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
         if 'new_desc' not in st.session_state: st.session_state.new_desc = ""
-
         c1, c2 = st.columns([1.5, 1])
         d_date = c1.date_input("Ngày", get_vn_time(), key="d_new", label_visibility="collapsed")
         d_type = c2.selectbox("Loại", ["Chi", "Thu"], key="t_new", label_visibility="collapsed")
-        
-        st.write("💰 **Số tiền:**")
-        d_amount = st.number_input("Số tiền", min_value=0, step=5000, value=st.session_state.new_amount, key="a_new", label_visibility="collapsed")
-        st.write("📝 **Nội dung:**")
-        d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
-        
+        st.write("💰 **Số tiền:**"); d_amount = st.number_input("Số tiền", min_value=0, step=5000, value=st.session_state.new_amount, key="a_new", label_visibility="collapsed")
+        st.write("📝 **Nội dung:**"); d_desc = st.text_input("Mô tả", value=st.session_state.new_desc, key="desc_new", placeholder="VD: Ăn sáng...", label_visibility="collapsed")
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam_mode = st.toggle("Dùng Camera", value=False)
         img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed") if cam_mode else st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
-
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
             if d_amount > 0 and d_desc.strip() != "":
@@ -302,13 +253,12 @@ def render_input_form():
                         fname = f"{d_date.strftime('%Y%m%d')}_{remove_accents(d_desc)}.jpg"
                         link = upload_image_to_drive(img_data, fname)
                     add_transaction(d_date, d_type, d_amount, d_desc, link)
-                st.success("Đã lưu!")
-                st.session_state.new_amount = 0; st.session_state.new_desc = ""; time.sleep(0.5); st.rerun()
+                st.success("Đã lưu!"); st.session_state.new_amount = 0; st.session_state.new_desc = ""; time.sleep(0.5); st.rerun()
             else: st.warning("Thiếu thông tin!")
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # --- ĐOẠN NÀY ĐÃ ĐƯỢC SỬA: KHÔNG THỤT ĐẦU DÒNG HTML ---
+    # --- ĐOẠN NÀY ĐÃ ĐƯỢC CHỈNH SỬA KỸ: KHÔNG THỤT DÒNG HTML & ĐƯA TÊN RA NGOÀI ---
     html_content = f"""
 <div class="balance-box">
 <div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN</div>
@@ -318,15 +268,14 @@ def render_dashboard_box(bal, thu, chi):
 <div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
 <div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
 </div>
-<div class="signature-tag">TUẤN VDS.HCM</div>
 </div>
+<div style="text-align: left; margin-top: 0px; margin-bottom: 15px; font-size: 0.75rem; color: #aaa; font-style: italic; font-weight: 600;">TUẤN VDS.HCM</div>
 """
     st.markdown(html_content, unsafe_allow_html=True)
 
 def render_report_table(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    today = get_vn_time()
-    d30 = today - timedelta(days=30)
+    today = get_vn_time(); d30 = today - timedelta(days=30)
     col_d1, col_d2 = st.columns(2)
     start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
     end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
@@ -337,19 +286,13 @@ def render_report_table(df):
             if row['Loai'] == 'Open': return ['background-color: #E0E0E0; font-style: italic'] * len(row)
             return [''] * len(row)
         def color_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
-
-        st.dataframe(
-            df_report.style.apply(highlight, axis=1).map(color_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}),
-            column_config={"STT": st.column_config.NumberColumn("STT", width="small"), "Khoan": st.column_config.TextColumn("Khoản", width="large"), "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", "SoTienShow": "Số tiền", "ConLai": "Còn lại", "Loai": None},
-            hide_index=True, use_container_width=True, height=500
-        )
+        st.dataframe(df_report.style.apply(highlight, axis=1).map(color_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}), column_config={"STT": st.column_config.NumberColumn("STT", width="small"), "Khoan": st.column_config.TextColumn("Khoản", width="large"), "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", "SoTienShow": "Số tiền", "ConLai": "Còn lại", "Loai": None}, hide_index=True, use_container_width=True, height=500)
         final_bal = df_report['ConLai'].iloc[-1]
         st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
     else: st.warning("Không có dữ liệu.")
 
 def render_history_list(df):
     if df.empty: st.info("Trống"); return
-    
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
         row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
@@ -367,10 +310,8 @@ def render_history_list(df):
                     update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
                     st.session_state.edit_row_index = None; st.rerun()
                 if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
-
     df_sorted = df.sort_values(by='Ngay', ascending=False)
     h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
-    
     for index, row in df_sorted.head(50).iterrows():
         c1, c2, c3 = st.columns([2, 1, 1], gap="small")
         with c1:
@@ -385,7 +326,6 @@ def render_history_list(df):
             if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
             if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
         st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
-    
     if len(df) > 50: st.caption("... và còn nhiều giao dịch cũ hơn")
 
 def render_export(df):
@@ -411,9 +351,8 @@ if not df.empty:
 with st.sidebar:
     st.title("⚙️ Cài đặt")
     layout_mode = st.radio("Chế độ xem:", ["📱 Điện thoại", "💻 Laptop"])
-    if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
-        clear_data_cache(); st.rerun()
-    st.info("Phiên bản: 2.6 Bug Fixes")
+    if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
+    st.info("Phiên bản: 2.8 Stable")
 
 if "Laptop" in layout_mode:
     col_left, col_right = st.columns([1, 1.8], gap="medium")
