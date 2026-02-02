@@ -15,7 +15,7 @@ import difflib
 import uuid
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (ADAPTIVE - TỰ ĐỘNG THEO HỆ THỐNG)
+# 1. CẤU HÌNH & CSS (ADAPTIVE THEME)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -28,12 +28,10 @@ st.markdown("""
 <style>
     /* 1. CẤU TRÚC CHUNG */
     .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
-    
-    /* Ẩn thành phần thừa, giữ lại Sidebar Toggle */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, #MainMenu, [data-testid="stStatusWidget"] { display: none !important; }
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
 
-    /* 2. GIAO DIỆN THÍCH ỨNG (DARK/LIGHT MODE AUTO) */
+    /* 2. GIAO DIỆN THÍCH ỨNG */
     .balance-box {
         background-color: var(--secondary-background-color);
         padding: 15px; border-radius: 10px;
@@ -49,17 +47,14 @@ st.markdown("""
     }
 
     /* 3. BUTTONS */
-    /* Nút chính (Lưu/Thêm) */
     [data-testid="stFormSubmitButton"] > button {
         width: 100%; background-color: #ff4b4b; color: white;
         font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px;
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút Logout trên Top Bar */
-    .logout-btn { border: 1px solid #ef4444; color: #ef4444; font-weight: bold; }
-    
-    /* Nút icon nhỏ (Sửa/Xóa) */
+    .logout-btn button { border: 1px solid #ef4444; color: #ef4444; font-weight: bold; }
+
     div[data-testid="column"] button {
         padding: 2px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -67,7 +62,7 @@ st.markdown("""
     }
     div[data-testid="column"] button:hover { border-color: #ff4b4b; color: #ff4b4b; }
 
-    /* 4. TABLE STYLE (EXCEL-LIKE) */
+    /* 4. TABLE STYLE */
     .excel-header {
         background-color: var(--secondary-background-color); padding: 10px 5px;
         font-weight: 800; font-size: 0.85rem; text-transform: uppercase;
@@ -90,7 +85,7 @@ st.markdown("""
         font-weight: 800; padding: 12px; border-radius: 6px; text-align: right; margin-top: 15px; font-size: 1.1rem;
     }
 
-    /* Footer Gọn Gàng */
+    /* Footer */
     .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
     
     .login-container { display: flex; justify-content: center; margin-top: 80px; }
@@ -124,17 +119,14 @@ def auto_capitalize(text):
     return text
 
 def format_vnd(amount):
-    """
-    Format số:
-    - Nếu là số nguyên: 1.000.000 (bỏ .00)
-    - Nếu có lẻ: 1.000,5
-    """
+    """Format: 1.000 (nếu chẵn) hoặc 1.000,5 (nếu lẻ)"""
     if pd.isna(amount): return "0"
     try:
         val = float(amount)
         if val.is_integer():
             return "{:,.0f}".format(val).replace(",", ".")
         else:
+            # Format 2 số lẻ, thay chấm bằng phẩy
             return "{:,.2f}".format(val).replace(",", "X").replace(".", ",").replace("X", ".").rstrip('0').rstrip(',')
     except: return "0"
 
@@ -189,7 +181,7 @@ def load_data_with_index():
         if df.empty: return pd.DataFrame()
         df['Row_Index'] = range(2, len(df) + 2)
         df['Ngay'] = pd.to_datetime(df['Ngay'], errors='coerce')
-        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float') # Dùng float để giữ số lẻ nếu có
+        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
         return df
     except: return pd.DataFrame()
 
@@ -271,7 +263,7 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT (UNIVERSAL) ====================
+# ==================== 4. EXCEL EXPORT ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -448,9 +440,10 @@ def render_thuchi_module(is_laptop):
             c1, c2 = st.columns([1, 1])
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
-            d_amt = st.number_input("Số tiền", min_value=0.0, step=1000.0, value=d_a)
+            d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=d_a)
             d_desc = st.text_input("Mô tả", value=d_desc)
-            img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
+            if not is_edit: img = st.file_uploader("Ảnh", type=['jpg','png'])
+            else: img = None
 
             btn_txt = "CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"
             submitted = st.form_submit_button(btn_txt)
@@ -569,9 +562,16 @@ def render_vattu_module(is_laptop):
                     ratio = c3.number_input("Quy đổi", 1.0); p1 = c4.number_input("Giá nhập", 0.0)
                 
                 with st.form("vt_add"):
-                    unit_ops = [f"{u1} (Cấp 1)", f"{u2} (Cấp 2)"] if u2 else [f"{u1} (Cấp 1)"]
-                    if not u1: unit_ops = ["Mặc định"]
-                    u_ch = st.radio("Đơn vị:", unit_ops, horizontal=True, index=(1 if u2 else 0))
+                    # FIX LOGIC RADIO BUTTON (Tránh lỗi index)
+                    unit_ops = []
+                    if u1: unit_ops.append(f"{u1} (Cấp 1)")
+                    if u2: unit_ops.append(f"{u2} (Cấp 2)")
+                    if not unit_ops: unit_ops = ["Mặc định"]
+                    
+                    # Logic chọn index: Nếu có 2 đơn vị thì chọn cái thứ 2 (index 1), còn không thì 0
+                    def_idx = 1 if len(unit_ops) > 1 else 0
+                    
+                    u_ch = st.radio("Đơn vị:", unit_ops, horizontal=True, index=def_idx)
                     c1, c2 = st.columns([1, 2])
                     qty = c1.number_input("Số lượng:", 0.0)
                     note = c2.text_input("Ghi chú")
@@ -581,7 +581,9 @@ def render_vattu_module(is_laptop):
                     if submitted:
                         if qty > 0:
                             u1 = auto_capitalize(u1); u2 = auto_capitalize(u2)
-                            sel_u = u1 if u1 and u1 in u_ch else (u2 if u2 else "Mặc định")
+                            # Tách tên đơn vị từ chuỗi "Cái (Cấp 2)" -> "Cái"
+                            sel_u = u_ch.split(" (")[0] if "(" in u_ch else u_ch
+                            
                             p_sv = generate_project_code(st.session_state.curr_proj_name)
                             if sel_p != "++ TẠO DỰ ÁN MỚI ++" and not df_pj.empty:
                                 f = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name]
@@ -602,6 +604,7 @@ def render_vattu_module(is_laptop):
                 dv = df_pj[df_pj['TenDuAn'] == vp]
                 st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
                 
+                # Edit Form
                 if st.session_state.role == 'admin':
                     if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                     if st.session_state.edit_vt_id:
@@ -625,6 +628,7 @@ def render_vattu_module(is_laptop):
                     with c4:
                         if st.session_state.role == 'admin':
                             b1, b2 = st.columns(2)
+                            # FIX KEY DUPLICATE
                             if b1.button("✏️", key=f"vt_e_{r['Row_Index']}_{uuid.uuid4()}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
                             if b2.button("🗑️", key=f"vt_d_{r['Row_Index']}_{uuid.uuid4()}"): delete_material_row(r['Row_Index']); st.rerun()
                     st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
@@ -654,6 +658,7 @@ def render_vattu_module(is_laptop):
         with c2:
             t1, t2, t3 = st.tabs(["CHI TIẾT", "KHO VẬT TƯ", "XUẤT"])
             with t1: render_list_vt()
+            # FIX: TAB KHO LUÔN HIỆN
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
@@ -662,32 +667,26 @@ def render_vattu_module(is_laptop):
         with mt[0]: render_input_vt()
         with mt[1]: render_list_vt()
         with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
-        with mt[3]: render_export_vt()
+        with mt[3]: render_export_vt() # Mobile Export OK
 
 # ==================== 8. APP RUN ====================
 if check_password():
-    # TOP BAR NAVIGATION
-    col_user, col_mode, col_logout = st.columns([6, 2, 1.5])
-    with col_user:
-        role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
-        st.markdown(f"**Xin chào: {role}**")
-    with col_mode:
-        is_laptop = st.toggle("💻 Laptop Mode", value=True)
-    with col_logout:
-        if st.button("🚪 Đăng xuất", key="top_logout"):
-            st.session_state.role = None; st.rerun()
-
-    st.divider()
-
     with st.sidebar:
         st.header("⚙️ CÀI ĐẶT")
         change_password_ui()
+        st.divider()
+        if st.button("Đăng xuất", use_container_width=True): st.session_state.role = None; st.rerun()
         if st.session_state.role == 'admin':
-            st.divider()
             if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
-    main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
-    with main_tabs[0]: render_thuchi_module(is_laptop)
-    with main_tabs[1]: render_vattu_module(is_laptop)
+    _, col = st.columns([0.1, 10])
+    with col:
+        # Nút chuyển mode ở góc phải trên cùng
+        c_mode = st.columns([8, 2])
+        with c_mode[1]: is_laptop = st.toggle("💻 Laptop Mode", True)
+        
+        main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
+        with main_tabs[0]: render_thuchi_module(is_laptop)
+        with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
