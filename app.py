@@ -15,23 +15,32 @@ import difflib
 import uuid
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (ADAPTIVE THEME)
+# 1. CẤU HÌNH & CSS (SCROLLABLE LAYOUT)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
     page_icon="🏢",
     layout="wide",
-    initial_sidebar_state="collapsed" 
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
 <style>
     /* 1. CẤU TRÚC CHUNG */
-    .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
+    .block-container { padding-top: 2.5rem !important; padding-bottom: 2rem !important; }
     
-    /* Ẩn thành phần thừa */
+    /* Hiện lại nút Sidebar (quan trọng) */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        color: var(--text-color);
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128,128,128,0.3);
+        border-radius: 5px;
+    }
+
+    /* Ẩn các thành phần thừa khác */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, #MainMenu, [data-testid="stStatusWidget"] { display: none !important; }
-    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
+    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
 
     /* 2. GIAO DIỆN THÍCH ỨNG */
     .balance-box {
@@ -49,19 +58,12 @@ st.markdown("""
     }
 
     /* 3. BUTTONS */
-    /* Nút Đăng xuất trên cùng */
-    .logout-btn button {
-        background-color: #ef4444 !important; color: white !important; font-weight: bold; border-radius: 20px;
-    }
-    
-    /* Nút Submit Form */
     [data-testid="stFormSubmitButton"] > button {
-        width: 100%; background-color: #2563eb; color: white;
+        width: 100%; background-color: #ff4b4b; color: white;
         font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px;
     }
-    [data-testid="stFormSubmitButton"] > button:hover { background-color: #1d4ed8; }
+    [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút icon nhỏ */
     div[data-testid="column"] button {
         padding: 2px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -93,7 +95,8 @@ st.markdown("""
     }
 
     /* Footer */
-    .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; }
+    .app-footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
+    
     .login-container { display: flex; justify-content: center; margin-top: 80px; }
     .login-box { width: 100%; max-width: 400px; padding: 30px; border-radius: 12px; background-color: var(--secondary-background-color); box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
 </style>
@@ -112,6 +115,12 @@ def get_gs_client():
 
 def get_vn_time(): return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
 
+def remove_accents(input_str):
+    if not isinstance(input_str, str): return str(input_str)
+    s = unicodedata.normalize('NFD', input_str)
+    s = "".join([c for c in s if unicodedata.category(c) != 'Mn'])
+    return s.replace("đ", "d").replace("Đ", "D")
+
 def auto_capitalize(text):
     if not text or not isinstance(text, str): return ""
     text = text.strip()
@@ -119,24 +128,25 @@ def auto_capitalize(text):
     return text
 
 def format_vnd(amount):
+    """Định dạng số: bỏ .00 nếu là chẵn, thêm .000 nếu > 1000"""
     if pd.isna(amount): return "0"
     try:
         val = float(amount)
-        if val.is_integer(): return "{:,.0f}".format(val).replace(",", ".")
-        else: return "{:,.2f}".format(val).replace(",", ".")
+        if val.is_integer():
+            return "{:,.0f}".format(val).replace(",", ".")
+        else:
+            return "{:,.2f}".format(val).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return "0"
 
 def generate_project_code(name):
     if not name: return ""
-    clean = unicodedata.normalize('NFD', name)
-    clean = "".join([c for c in clean if unicodedata.category(c) != 'Mn']).upper()
+    clean = remove_accents(name).upper()
     initials = "".join([w[0] for w in clean.split() if w.isalnum()])
     date = get_vn_time().strftime('%d%m%y')
     return f"{initials}{date}"
 
 def generate_material_code(name):
-    clean = unicodedata.normalize('NFD', name)
-    clean = "".join([c for c in clean if unicodedata.category(c) != 'Mn']).upper()
+    clean = remove_accents(name).upper()
     initials = "".join([w[0] for w in clean.split() if w.isalnum()])[:3]
     suffix = ''.join(random.choices(string.digits, k=3))
     return f"VT{initials}{suffix}"
@@ -285,6 +295,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         ws.merge_range('A2:F2', f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
         ws.merge_range('A3:F3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
+        ws.merge_range('A4:F4', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
         for c, h in enumerate(headers): ws.write(4, c, h, fmt_header)
@@ -327,6 +338,7 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
         ws.merge_range('A2:G2', f"Dự án: {proj_name} (Mã: {proj_code})", fmt_subtitle)
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
+        ws.merge_range('A4:G4', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
         cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền"]
         for i, h in enumerate(cols): ws.write(4, i, h, fmt_header)
@@ -486,6 +498,17 @@ def render_thuchi_module(is_laptop):
                     if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}_{uuid.uuid4()}"): delete_transaction(r['Row_Index']); st.rerun()
             st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
 
+    # --- TAB XUẤT EXCEL CHUNG ---
+    def render_export_tab():
+        if not df.empty:
+            d1 = st.date_input("Từ ngày", get_vn_time().replace(day=1), key=f"d1_tc_{uuid.uuid4()}")
+            d2 = st.date_input("Đến ngày", get_vn_time(), key=f"d2_tc_{uuid.uuid4()}")
+            
+            if st.button("TẢI EXCEL", key=f"btn_ex_tc_{uuid.uuid4()}"):
+                dt = convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2)
+                st.download_button("DOWNLOAD", dt, "QuyetToan.xlsx")
+        else: st.warning("Không có dữ liệu để xuất")
+
     if is_laptop:
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_tc()
@@ -496,12 +519,7 @@ def render_thuchi_module(is_laptop):
                 d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="d1")
                 d2 = st.date_input("Đến", get_vn_time(), key="d2")
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
-            with t3:
-                if not df.empty:
-                    if st.button("TẢI EXCEL", key="ex_tc"):
-                        dt = convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2)
-                        st.download_button("DOWNLOAD", dt, "QuyetToan.xlsx")
-                else: st.warning("Không có dữ liệu để xuất")
+            with t3: render_export_tab()
     else:
         mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
         with mt[0]: render_input_tc()
@@ -510,12 +528,7 @@ def render_thuchi_module(is_laptop):
             d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1")
             d2 = st.date_input("Đến", get_vn_time(), key="m_d2")
             st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
-        with mt[3]:
-            # Fix: Allow Mobile Export
-            if not df.empty:
-                if st.button("TẢI EXCEL", key="m_ex_tc"):
-                    dt = convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2)
-                    st.download_button("DOWNLOAD", dt, "QuyetToan.xlsx")
+        with mt[3]: render_export_tab()
 
 def render_vattu_module(is_laptop):
     def render_input_vt():
@@ -525,7 +538,7 @@ def render_vattu_module(is_laptop):
             ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
             
             p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + ex
-            sel_p = st.selectbox("📁 Dự án:", p_opts, index=1 if len(ex)>0 else 0)
+            sel_p = st.selectbox("📁 Dự án:", p_opts, index=0)
             
             fin_p = st.text_input("Tên dự án:") if sel_p == "++ TẠO DỰ ÁN MỚI ++" else sel_p
             fin_p = auto_capitalize(fin_p)
@@ -629,99 +642,57 @@ def render_vattu_module(is_laptop):
                 
                 st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
 
-    # --- LAYOUT LOGIC (FIX: Kho & Xuất Always Visible) ---
-    t_titles = ["KHO VẬT TƯ", "XUẤT BÁO CÁO"]
-    if st.session_state.role == 'admin': 
-        if is_laptop:
-            c1, c2 = st.columns([3.5, 6.5])
-            with c1: 
-                st.markdown("**NHẬP LIỆU**"); render_input_vt()
-            with c2:
-                # Tab Chi tiết, Kho, Xuất
-                t1, t2, t3 = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
-                with t1: render_list_vt()
-                with t2: st.dataframe(load_materials_master(), use_container_width=True)
-                with t3: 
-                    df_pj = load_project_data()
-                    if not df_pj.empty:
-                        xp = st.selectbox("Dự án xuất:", ["TẤT CẢ"] + df_pj['TenDuAn'].unique().tolist())
-                        if st.button("TẢI EXCEL", key="xpv"):
-                            if xp == "TẤT CẢ":
-                                agg = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'})
-                                agg['DonGia'] = agg.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
-                                dt = export_project_materials_excel(agg, "ALL", "TONG HOP")
-                            else:
-                                f = df_pj[df_pj['TenDuAn'] == xp]
-                                pc = f.iloc[0]['MaDuAn'] if not f.empty else ""
-                                dt = export_project_materials_excel(f, pc, xp)
-                            st.download_button("DOWNLOAD", dt, "VatTu.xlsx")
-        else:
-            # Mobile Admin
-            mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
-            with mt[0]: render_input_vt()
-            with mt[1]: render_list_vt()
-            with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
-            with mt[3]:
-                # Mobile Export Code Duplicated
-                df_pj = load_project_data()
-                if not df_pj.empty:
-                    xp = st.selectbox("Dự án xuất:", ["TẤT CẢ"] + df_pj['TenDuAn'].unique().tolist(), key="m_xp")
-                    if st.button("TẢI EXCEL", key="m_xpv"):
-                        if xp == "TẤT CẢ":
-                            agg = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'})
-                            agg['DonGia'] = agg.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
-                            dt = export_project_materials_excel(agg, "ALL", "TONG HOP")
-                        else:
-                            f = df_pj[df_pj['TenDuAn'] == xp]
-                            pc = f.iloc[0]['MaDuAn'] if not f.empty else ""
-                            dt = export_project_materials_excel(f, pc, xp)
-                        st.download_button("DOWNLOAD", dt, "VatTu.xlsx")
+    # --- TAB XUẤT VẬT TƯ CHUNG ---
+    def render_export_vt():
+        df_pj = load_project_data()
+        if not df_pj.empty:
+            xp = st.selectbox("Dự án xuất:", ["TẤT CẢ"] + df_pj['TenDuAn'].unique().tolist(), key=f"xp_{uuid.uuid4()}")
+            if st.button("TẢI EXCEL", key=f"xpv_{uuid.uuid4()}"):
+                if xp == "TẤT CẢ":
+                    agg = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'})
+                    agg['DonGia'] = agg.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
+                    dt = export_project_materials_excel(agg, "ALL", "TONG HOP")
+                else:
+                    f = df_pj[df_pj['TenDuAn'] == xp]
+                    pc = f.iloc[0]['MaDuAn'] if not f.empty else ""
+                    dt = export_project_materials_excel(f, pc, xp)
+                st.download_button("DOWNLOAD", dt, "VatTu.xlsx")
+
+    # LAYOUT
+    if is_laptop:
+        c1, c2 = st.columns([3.5, 6.5])
+        with c1: render_input_vt()
+        with c2:
+            t1, t2, t3 = st.tabs(["CHI TIẾT", "KHO VẬT TƯ", "XUẤT"])
+            with t1: render_list_vt()
+            with t2: st.dataframe(load_materials_master(), use_container_width=True)
+            with t3: render_export_vt()
     else:
-        # Viewer (Same for laptop/mobile)
-        mt = st.tabs(["CHI TIẾT", "KHO", "XUẤT"])
-        with mt[0]: render_list_vt()
-        with mt[1]: st.dataframe(load_materials_master(), use_container_width=True)
-        with mt[2]:
-             # Viewer Export Code
-             df_pj = load_project_data()
-             if not df_pj.empty:
-                xp = st.selectbox("Dự án xuất:", ["TẤT CẢ"] + df_pj['TenDuAn'].unique().tolist(), key="v_xp")
-                if st.button("TẢI EXCEL", key="v_xpv"):
-                    if xp == "TẤT CẢ":
-                        agg = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'})
-                        agg['DonGia'] = agg.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
-                        dt = export_project_materials_excel(agg, "ALL", "TONG HOP")
-                    else:
-                        f = df_pj[df_pj['TenDuAn'] == xp]
-                        pc = f.iloc[0]['MaDuAn'] if not f.empty else ""
-                        dt = export_project_materials_excel(f, pc, xp)
-                    st.download_button("DOWNLOAD", dt, "VatTu.xlsx")
+        # Mobile: Show all tabs including Export
+        mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
+        with mt[0]: render_input_vt()
+        with mt[1]: render_list_vt()
+        with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
+        with mt[3]: render_export_vt()
 
-# ==================== 8. APP RUN (TOP BAR NAV) ====================
+# ==================== 8. APP RUN ====================
 if check_password():
-    # TOP BAR NAVIGATION
-    col_user, col_mode, col_logout = st.columns([6, 2, 1.5])
-    with col_user:
-        role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
-        st.markdown(f"**Xin chào: {role}**")
-    with col_mode:
-        is_laptop = st.toggle("💻 Laptop Mode", value=True)
-    with col_logout:
-        if st.button("🚪 Đăng xuất", key="top_logout"):
-            st.session_state.role = None; st.rerun()
-
-    st.divider()
-
     with st.sidebar:
         st.header("⚙️ CÀI ĐẶT")
         change_password_ui()
+        st.divider()
+        if st.button("Đăng xuất", use_container_width=True): st.session_state.role = None; st.rerun()
         if st.session_state.role == 'admin':
-            st.divider()
             if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
-    main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
-    with main_tabs[0]: render_thuchi_module(is_laptop)
-    with main_tabs[1]: render_vattu_module(is_laptop)
+    _, col = st.columns([0.1, 10])
+    with col:
+        # Nút chuyển mode ở góc phải trên cùng
+        c_mode = st.columns([8, 2])
+        with c_mode[1]: is_laptop = st.toggle("💻 Laptop Mode", True)
+        
+        main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
+        with main_tabs[0]: render_thuchi_module(is_laptop)
+        with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
-
