@@ -54,9 +54,6 @@ st.markdown("""
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #ff2b2b; color: white; }
 
     .app-footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px dashed #eee; color: #999; font-size: 0.8rem; font-style: italic; }
-    
-    /* Login Style */
-    .login-box { padding: 20px; border: 1px solid #ddd; border-radius: 10px; max-width: 400px; margin: 50px auto; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -102,9 +99,46 @@ def generate_material_code(name):
     suffix = ''.join(random.choices(string.digits, k=3))
     return f"VT{initials}{suffix}"
 
-# ==================== 3. DATA LAYER ====================
+# ==================== 3. DATA LAYER (AUTH & CONFIG) ====================
 def clear_data_cache(): st.cache_data.clear()
 
+# --- QUẢN LÝ MẬT KHẨU TỪ GOOGLE SHEET ---
+@st.cache_data(ttl=60) # Cache 60s để cập nhật nhanh khi đổi pass
+def load_config():
+    """Load mật khẩu từ sheet 'config'"""
+    client = get_gs_client()
+    wb = client.open("QuanLyThuChi")
+    try:
+        sheet = wb.worksheet("config")
+    except:
+        # Nếu chưa có sheet config, tự tạo và điền mặc định
+        sheet = wb.add_worksheet("config", 100, 2)
+        sheet.append_row(["Key", "Value"])
+        sheet.append_row(["admin_pwd", "admin123"])
+        sheet.append_row(["viewer_pwd", "xem123"])
+    
+    records = sheet.get_all_records()
+    config = {row['Key']: str(row['Value']) for row in records}
+    
+    # Fallback nếu thiếu dòng
+    if 'admin_pwd' not in config: config['admin_pwd'] = "admin123"
+    if 'viewer_pwd' not in config: config['viewer_pwd'] = "xem123"
+    return config
+
+def update_password(role, new_pass):
+    """Cập nhật mật khẩu mới lên Sheet"""
+    client = get_gs_client()
+    sheet = client.open("QuanLyThuChi").worksheet("config")
+    
+    # Tìm dòng cần sửa
+    cell = sheet.find(f"{role}_pwd")
+    if cell:
+        sheet.update_cell(cell.row, 2, new_pass) # Cột 2 là Value
+        clear_data_cache() # Xóa cache để áp dụng ngay
+        return True
+    return False
+
+# --- CÁC HÀM LOAD DỮ LIỆU CŨ ---
 @st.cache_data(ttl=300)
 def load_data_with_index():
     try:
@@ -220,7 +254,6 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
 
         ws = workbook.add_worksheet("SoQuy")
-        
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         ws.merge_range('A2:F2', f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
         ws.merge_range('A3:F3', f"Hệ thống Quyết toán - Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
@@ -278,6 +311,7 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
             ws.write(row_idx, 4, row['SoLuong'], fmt_cell); ws.write(row_idx, 5, row['DonGia'], fmt_num)
             ws.write(row_idx, 6, row['ThanhTien'], fmt_num)
             total_money += row['ThanhTien']; row_idx += 1
+            
         ws.merge_range(row_idx, 0, row_idx, 5, "TỔNG CỘNG TIỀN", fmt_total_label)
         ws.write(row_idx, 6, total_money, fmt_total_val)
         ws.set_row(0, 40); ws.set_row(1, 25); ws.set_row(4, 30)
@@ -288,6 +322,7 @@ def process_report_data(df, start_date=None, end_date=None):
     df_all = df.sort_values(by=['Ngay', 'Row_Index']).copy()
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
+    
     if start_date and end_date:
         mask_before = df_all['Ngay'].dt.date < start_date
         df_before = df_all[mask_before]
@@ -297,6 +332,7 @@ def process_report_data(df, start_date=None, end_date=None):
         row_open = {'Row_Index': 0, 'Ngay': pd.Timestamp(start_date), 'Loai': 'Open', 'SoTien': 0, 'MoTa': f"Số dư đầu kỳ", 'HinhAnh': '', 'ConLai': opening_balance, 'SignedAmount': 0}
         df_proc = pd.concat([pd.DataFrame([row_open]), df_proc], ignore_index=True)
     else: df_proc = df_all.copy()
+
     if df_proc.empty: return pd.DataFrame()
     df_proc['STT'] = range(1, len(df_proc) + 1)
     df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
@@ -323,25 +359,39 @@ def render_dashboard_box(bal, thu, chi):
 <div style="text-align: left; margin-top: 0px; margin-bottom: 10px; margin-left: 5px; font-size: 0.7rem; color: #aaa; font-style: italic; font-weight: 600;">TUẤN VDS.HCM</div>
 """, unsafe_allow_html=True)
 
-# --- AUTH & UI ---
+# --- AUTH ---
 def check_password():
     if 'role' not in st.session_state: st.session_state.role = None
     if st.session_state.role is None:
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
         with st.form("login_form"):
-            st.markdown("<h3 style='text-align:center;'>🔐 ĐĂNG NHẬP HỆ THỐNG</h3>", unsafe_allow_html=True)
-            pwd = st.text_input("Mật khẩu truy cập:", type="password")
-            submitted = st.form_submit_button("ĐĂNG NHẬP")
-            if submitted:
-                if pwd == "admin123": st.session_state.role = "admin"; st.rerun()
-                elif pwd == "xem123": st.session_state.role = "viewer"; st.rerun()
-                else: st.error("Mật khẩu không đúng!")
+            st.markdown("<h3 style='text-align:center;'>🔐 ĐĂNG NHẬP</h3>", unsafe_allow_html=True)
+            user_input = st.text_input("Tên đăng nhập (admin/viewer):").lower().strip()
+            pass_input = st.text_input("Mật khẩu:", type="password")
+            if st.form_submit_button("ĐĂNG NHẬP"):
+                config = load_config()
+                if user_input == "admin" and pass_input == config['admin_pwd']:
+                    st.session_state.role = "admin"; st.rerun()
+                elif user_input == "viewer" and pass_input == config['viewer_pwd']:
+                    st.session_state.role = "viewer"; st.rerun()
+                else: st.error("Sai tên đăng nhập hoặc mật khẩu!")
         return False
     return True
 
+def change_password_ui():
+    with st.expander("🔐 Đổi mật khẩu"):
+        with st.form("change_pass_form"):
+            new_p = st.text_input("Mật khẩu mới:", type="password")
+            confirm_p = st.text_input("Xác nhận mật khẩu:", type="password")
+            if st.form_submit_button("CẬP NHẬT"):
+                if new_p and new_p == confirm_p:
+                    update_password(st.session_state.role, new_p)
+                    st.success("Đổi mật khẩu thành công!"); time.sleep(1)
+                else: st.error("Mật khẩu không khớp hoặc để trống!")
+
 # --- THU CHI UI ---
 def render_thuchi_input():
-    if st.session_state.role != 'admin': return # Viewer không thấy
+    if st.session_state.role != 'admin': return
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
         with st.form("form_thu_chi", clear_on_submit=True):
@@ -351,8 +401,7 @@ def render_thuchi_input():
             d_amount = st.number_input("Số tiền", min_value=0, step=5000)
             d_desc = st.text_input("Mô tả", placeholder="VD: Ăn sáng...")
             uploaded_file = st.file_uploader("Hình ảnh chứng từ", type=['jpg', 'png', 'jpeg'])
-            submitted = st.form_submit_button("LƯU GIAO DỊCH")
-            if submitted:
+            if st.form_submit_button("LƯU GIAO DỊCH"):
                 if d_amount > 0 and d_desc.strip():
                     with st.spinner("Đang lưu..."):
                         link = ""
@@ -369,7 +418,6 @@ def render_thuchi_history(df):
         with c1: st.markdown(f"**{r['MoTa']}**<br><span style='color:grey;font-size:0.8em'>{r['Ngay'].strftime('%d/%m')}</span>", unsafe_allow_html=True)
         with c2: st.markdown(f"<span style='color:{'green' if r['Loai']=='Thu' else 'red'};font-weight:bold'>{format_vnd(r['SoTien'])}</span>", unsafe_allow_html=True)
         with c3: 
-            # Chỉ Admin mới thấy nút xóa
             if st.session_state.role == 'admin':
                 if st.button("🗑️", key=f"del_tc_{r['Row_Index']}"): delete_transaction(r['Row_Index']); st.rerun()
         st.markdown("<hr style='margin: 5px 0'>", unsafe_allow_html=True)
@@ -402,18 +450,16 @@ def render_thuchi_module(layout_mode):
     if "Laptop" in layout_mode:
         c1, c2 = st.columns([1, 1.8], gap="medium")
         with c1: 
-            if st.session_state.role == 'admin': render_thuchi_input() # Chỉ admin thấy form nhập
-            else: st.info("🔒 Chế độ xem: Không thể nhập liệu.")
+            if st.session_state.role == 'admin': render_thuchi_input()
+            else: st.info("🔒 Chế độ xem")
         with c2:
             t1, t2, t3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất Báo Cáo"])
             with t1: render_thuchi_report(df)
             with t2: render_thuchi_history(df)
             with t3: render_thuchi_export(df)
     else:
-        # Ẩn Tab nhập nếu là Viewer
         tabs = ["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"] if st.session_state.role == 'admin' else ["📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"]
         my_tabs = st.tabs(tabs)
-        
         if st.session_state.role == 'admin':
             with my_tabs[0]: render_thuchi_input()
             with my_tabs[1]: render_thuchi_history(df)
@@ -425,21 +471,15 @@ def render_thuchi_module(layout_mode):
             with my_tabs[2]: render_thuchi_export(df)
 
 def render_vattu_module():
-    # Phân quyền Tabs
-    tabs_list = ["➕ NHẬP VẬT TƯ", "📜 LỊCH SỬ (SỬA/XÓA)", "📦 KHO", "📥 XUẤT"]
-    if st.session_state.role == 'viewer':
-        tabs_list = ["📜 CHI TIẾT DỰ ÁN", "📦 KHO", "📥 XUẤT"] # Viewer không có tab Nhập
-    
+    tabs_list = ["➕ NHẬP VẬT TƯ", "📜 LỊCH SỬ", "📦 KHO", "📥 XUẤT"] if st.session_state.role == 'admin' else ["📜 CHI TIẾT DỰ ÁN", "📦 KHO", "📥 XUẤT"]
     vt_tabs = st.tabs(tabs_list)
     
-    # --- TAB NHẬP (CHỈ ADMIN) ---
     if st.session_state.role == 'admin':
-        with vt_tabs[0]:
+        with vt_tabs[0]: # NHẬP
             with st.container(border=True):
                 df_pj = load_project_data()
                 existing = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
                 sel_proj = st.selectbox("📁 Chọn Dự án:", [""] + existing + ["➕ TẠO DỰ ÁN MỚI"], key="sel_proj_main")
-                
                 final_proj = ""
                 if sel_proj == "➕ TẠO DỰ ÁN MỚI": final_proj = st.text_input("Tên dự án mới:", placeholder="VD: Nhà A Tuấn...")
                 elif sel_proj: final_proj = sel_proj
@@ -459,15 +499,14 @@ def render_vattu_module():
                 m_list = df_m['TenVT'].unique().tolist() if not df_m.empty and 'TenVT' in df_m.columns else []
                 sel_vt = st.selectbox("📦 Chọn Vật tư:", ["", "++ TẠO VẬT TƯ MỚI ++"] + m_list)
                 
-                # ... (Giữ nguyên logic nhập liệu của bản 6.8) ...
                 if sel_vt == "++ TẠO VẬT TƯ MỚI ++":
                     is_new = True; vt_final = st.text_input("Nhập tên mới:")
-                    if vt_final and not df_m.empty and 'TenVT' in df_m.columns:
+                    if vt_final and not df_m.empty:
                         matches = difflib.get_close_matches(vt_final, df_m['TenVT'].tolist(), n=3, cutoff=0.5)
                         if matches:
                             st.markdown(f"<div class='suggestion-box'>💡 <b>Gợi ý:</b></div>", unsafe_allow_html=True)
                             for match in matches:
-                                if st.button(f"👉 {match}", key=f"sug_{match}"): st.info(f"Chọn **{match}** ở trên!")
+                                if st.button(f"👉 {match}", key=f"sug_{match}"): st.info(f"Chọn {match} ở trên!")
                 elif sel_vt:
                     is_new = False; vt_final = sel_vt
                     if not df_m.empty:
@@ -507,7 +546,7 @@ def render_vattu_module():
                                     save_project_material(p_code_save, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1, sel_u, qty, note, is_new)
                                 st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
                 
-                # Show list (Admin thấy list ngay khi nhập)
+                # Show list
                 if not df_pj.empty and 'MaDuAn' in df_pj.columns:
                     p_code_curr = ""
                     if sel_proj != "➕ TẠO DỰ ÁN MỚI":
@@ -521,7 +560,7 @@ def render_vattu_module():
                         for i, row in curr.tail(5).iterrows():
                             st.markdown(f"<div class='compact-row'><span class='c-name'>{row['TenVT']}</span> <span class='c-meta'>({row['SoLuong']} {row['DVT']})</span> <span class='c-price' style='margin-left:auto'>{format_vnd(row['ThanhTien'])}</span></div>", unsafe_allow_html=True)
 
-    # --- TAB LỊCH SỬ / CHI TIẾT (ADMIN CÓ SỬA/XÓA, VIEWER CHỈ XEM) ---
+    # --- TAB LỊCH SỬ / CHI TIẾT ---
     idx_hist = 1 if st.session_state.role == 'admin' else 0
     with vt_tabs[idx_hist]:
         df_pj = load_project_data()
@@ -529,7 +568,6 @@ def render_vattu_module():
             proj_list = df_pj['TenDuAn'].unique()
             sel_pj = st.selectbox("Chọn dự án để xem:", proj_list, key="hist_sel")
             
-            # Form Sửa (Chỉ Admin)
             if st.session_state.role == 'admin':
                 if 'edit_idx' not in st.session_state: st.session_state.edit_idx = None
                 if st.session_state.edit_idx is not None:
@@ -559,15 +597,15 @@ def render_vattu_module():
                     st.markdown("<div style='border-bottom:1px solid #eee; margin:2px 0'></div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='total-row'>TỔNG CỘNG: {format_vnd(view['ThanhTien'].sum())}</div>", unsafe_allow_html=True)
 
-    # --- TAB KHO & XUẤT (CHUNG CHO CẢ 2) ---
+    # --- TAB KHO & XUẤT ---
     idx_kho = 2 if st.session_state.role == 'admin' else 1
     idx_xuat = 3 if st.session_state.role == 'admin' else 2
     
-    with vt_tabs[idx_kho]: # KHO
+    with vt_tabs[idx_kho]:
         df_m = load_materials_master()
         if not df_m.empty and 'TenVT' in df_m.columns: st.dataframe(df_m)
             
-    with vt_tabs[idx_xuat]: # XUẤT
+    with vt_tabs[idx_xuat]:
         df_pj = load_project_data()
         if not df_pj.empty:
             p_opts = ["TẤT CẢ (TỔNG HỢP)"] + df_pj['TenDuAn'].unique().tolist()
@@ -587,6 +625,7 @@ def render_vattu_module():
 if check_password():
     with st.sidebar:
         st.title(f"👤 {st.session_state.role.upper()}")
+        change_password_ui()
         if st.button("Đăng xuất"): st.session_state.role = None; st.rerun()
         if st.session_state.role == 'admin':
             if st.button("🔄 Làm mới dữ liệu"): clear_data_cache(); st.rerun()
@@ -599,4 +638,4 @@ if check_password():
     with main_tabs[0]: render_thuchi_module(layout_mode)
     with main_tabs[1]: render_vattu_module()
 
-    st.markdown("<div class='app-footer'>Phiên bản: 7.0 Admin/Viewer Roles - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+    st.markdown("<div class='app-footer'>Phiên bản: 7.1 Auto-Config Password - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
