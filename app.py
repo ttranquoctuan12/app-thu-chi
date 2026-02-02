@@ -17,6 +17,7 @@ st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide
 
 st.markdown("""
 <style>
+    /* Lề trang */
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
     
     /* ẨN ICON THỪA */
@@ -27,7 +28,7 @@ st.markdown("""
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important; visibility: visible !important;
-        color: #000000 !important; background-color: rgba(255, 255, 255, 0.5); border-radius: 5px;
+        color: #000000 !important; background-color: rgba(255, 255, 255, 0.8); border-radius: 5px;
         z-index: 1000000;
     }
 
@@ -42,10 +43,34 @@ st.markdown("""
     }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
     
-    /* UI VẬT TƯ */
-    .vt-def-box { background-color: #e3f2fd; padding: 15px; border-radius: 10px; border: 1px dashed #1565C0; margin-bottom: 15px; }
-    .vt-input-box { background-color: #f1f8e9; padding: 15px; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 15px; }
-    .total-row { background-color: #fff3cd; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
+    /* UI VẬT TƯ (ĐÃ FIX MÀU CHỮ ĐẬM) */
+    .vt-def-box { 
+        background-color: #e3f2fd; 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px dashed #1565C0; 
+        margin-bottom: 15px; 
+        color: #0d47a1 !important; /* Chữ xanh đậm */
+        font-weight: bold;
+    }
+    .vt-input-box { 
+        background-color: #f1f8e9; 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px solid #81c784; 
+        margin-bottom: 15px; 
+        color: #1b5e20 !important; /* Chữ xanh lá đậm */
+        font-weight: bold;
+    }
+    .total-row { 
+        background-color: #fff3cd; 
+        color: #b71c1c !important; /* Chữ đỏ đậm */
+        font-weight: bold; 
+        padding: 10px; 
+        border-radius: 5px; 
+        text-align: right; 
+        margin-top: 10px; 
+    }
     
     /* FOOTER */
     .app-footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px dashed #eee; color: #999; font-size: 0.8rem; font-style: italic; }
@@ -94,7 +119,7 @@ def generate_material_code(name):
     suffix = ''.join(random.choices(string.digits, k=3))
     return f"VT{initials}{suffix}"
 
-# ==================== 3. DATA LAYER (CRUD - ĐÃ SỬA LỖI KEYERROR) ====================
+# ==================== 3. DATA LAYER (FIX LỖI KEYERROR) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=300)
@@ -110,17 +135,16 @@ def load_data_with_index(): # Thu Chi
     except: return pd.DataFrame()
 
 @st.cache_data(ttl=300)
-def load_materials_master(): # Danh mục VT - FIX LỖI KEYERROR TẠI ĐÂY
+def load_materials_master(): # Danh mục VT - FIX KEYERROR
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("dm_vattu")
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        # Kiểm tra xem có cột TenVT không, nếu không trả về rỗng để tránh lỗi
+        # Nếu sheet chưa có cột chuẩn, trả về khung rỗng để không lỗi
         if 'TenVT' not in df.columns:
             return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
         return df
     except: 
-        # Nếu lỗi kết nối hoặc sheet chưa tạo
         return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
 
 @st.cache_data(ttl=300)
@@ -134,7 +158,7 @@ def load_project_data(): # Data Dự án
         return df
     except: return pd.DataFrame()
 
-# --- GHI THU CHI ---
+# --- GHI DỮ LIỆU ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
@@ -149,7 +173,6 @@ def delete_transaction(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# --- GHI VẬT TƯ ---
 def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, price_unit1, selected_unit, qty, note, is_new_item=False):
     client = get_gs_client(); wb = client.open("QuanLyThuChi")
     
@@ -287,7 +310,7 @@ def process_report_data(df, start_date=None, end_date=None):
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# ==================== 5. UI SUB-COMPONENTS (QUAN TRỌNG: ĐỊNH NGHĨA TRƯỚC KHI DÙNG) ====================
+# ==================== 5. UI COMPONENTS (DEFINED BEFORE USE) ====================
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
@@ -305,7 +328,7 @@ def render_dashboard_box(bal, thu, chi):
 """
     st.markdown(html_content, unsafe_allow_html=True)
 
-# --- THU CHI UI HELPERS ---
+# --- THU CHI COMPONENTS ---
 def render_thuchi_input():
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
@@ -461,7 +484,7 @@ def render_vattu_module():
 
             # 3. ĐỊNH NGHĨA (CHỈ HIỆN KHI MỚI)
             if is_new and vt_name_final:
-                st.markdown(f"<div class='vt-def-box'>✨ <b>Định nghĩa cho: {vt_name_final}</b></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='vt-def-box'>✨ Định nghĩa cho: {vt_name_final}</div>", unsafe_allow_html=True)
                 d1, d2, d3, d4 = st.columns(4)
                 u1 = d1.text_input("ĐVT Lớn (C1):", placeholder="Thùng")
                 u2 = d2.text_input("ĐVT Nhỏ (C2):", placeholder="Cái")
@@ -470,7 +493,7 @@ def render_vattu_module():
             
             # 4. NHẬP SỐ LƯỢNG (LUÔN HIỆN BÊN DƯỚI)
             if vt_name_final:
-                st.markdown(f"<div class='vt-input-box'>🔽 <b>Nhập số lượng sử dụng</b></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='vt-input-box'>🔽 Nhập số lượng sử dụng</div>", unsafe_allow_html=True)
                 
                 # Logic chọn đơn vị
                 opt_labels = [f"{u1} (Cấp 1)", f"{u2} (Cấp 2)"] if u2 else [f"{u1} (Cấp 1)"]
@@ -543,7 +566,7 @@ def render_vattu_module():
                 data = export_project_materials_excel(df_exp, p_code, p_sel)
                 st.download_button("⬇️ Download Excel", data, f"VatTu_{p_code}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ==================== 7. APP EXECUTION ====================
+# ==================== 7. CHẠY ỨNG DỤNG (MAIN EXECUTION) ====================
 with st.sidebar:
     st.title("⚙️ Cài đặt")
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
