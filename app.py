@@ -17,14 +17,13 @@ st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide
 
 st.markdown("""
 <style>
-    /* Lề trang */
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
     
     /* ẨN ICON THỪA */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], 
     .stAppDeployButton, [data-testid="stStatusWidget"], footer, #MainMenu { display: none !important; }
 
-    /* HEADER & SIDEBAR BUTTON FIX */
+    /* HEADER & SIDEBAR */
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important; visibility: visible !important;
@@ -95,11 +94,11 @@ def generate_material_code(name):
     suffix = ''.join(random.choices(string.digits, k=3))
     return f"VT{initials}{suffix}"
 
-# ==================== 3. DATA LAYER (CRUD) ====================
+# ==================== 3. DATA LAYER (CRUD - ĐÃ SỬA LỖI KEYERROR) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=300)
-def load_data_with_index(): # Load Thu Chi
+def load_data_with_index(): # Thu Chi
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
         data = sheet.get_all_records(); df = pd.DataFrame(data)
@@ -111,20 +110,27 @@ def load_data_with_index(): # Load Thu Chi
     except: return pd.DataFrame()
 
 @st.cache_data(ttl=300)
-def load_materials_master(): # Load Danh mục VT
+def load_materials_master(): # Danh mục VT - FIX LỖI KEYERROR TẠI ĐÂY
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("dm_vattu")
-        return pd.DataFrame(sheet.get_all_records())
-    except: return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        # Kiểm tra xem có cột TenVT không, nếu không trả về rỗng để tránh lỗi
+        if 'TenVT' not in df.columns:
+            return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
+        return df
+    except: 
+        # Nếu lỗi kết nối hoặc sheet chưa tạo
+        return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
 
 @st.cache_data(ttl=300)
-def load_project_data(): # Load Data Dự án
+def load_project_data(): # Data Dự án
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
         data = sheet.get_all_records(); df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame(columns=["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu"])
         for col in ['SoLuong', 'DonGia', 'ThanhTien']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        df['Row_Index'] = range(2, len(df) + 2) # Index để xóa
+        df['Row_Index'] = range(2, len(df) + 2)
         return df
     except: return pd.DataFrame()
 
@@ -157,8 +163,9 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, p
         ws_master.append_row([mat_code, auto_capitalize(mat_name), unit1, unit2, ratio, price_unit1])
     else:
         df_master = load_materials_master()
-        found = df_master[df_master['TenVT'] == mat_name]
-        if not found.empty: mat_code = found.iloc[0]['MaVT']
+        if not df_master.empty and 'TenVT' in df_master.columns:
+            found = df_master[df_master['TenVT'] == mat_name]
+            if not found.empty: mat_code = found.iloc[0]['MaVT']
     
     # 2. Tính giá
     final_price = 0
@@ -177,10 +184,6 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, p
 
 def delete_material_master(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("dm_vattu")
-    sheet.delete_rows(int(row_idx)); clear_data_cache()
-
-def delete_project_data_row(row_idx):
-    client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
 def upload_image_to_drive(image_file, file_name):
@@ -284,7 +287,7 @@ def process_report_data(df, start_date=None, end_date=None):
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# ==================== 5. UI SUB-COMPONENTS (DEFINED BEFORE MODULES) ====================
+# ==================== 5. UI SUB-COMPONENTS (QUAN TRỌNG: ĐỊNH NGHĨA TRƯỚC KHI DÙNG) ====================
 
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
@@ -302,7 +305,7 @@ def render_dashboard_box(bal, thu, chi):
 """
     st.markdown(html_content, unsafe_allow_html=True)
 
-# --- THU CHI COMPONENTS ---
+# --- THU CHI UI HELPERS ---
 def render_thuchi_input():
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
@@ -390,7 +393,7 @@ def render_thuchi_export(df):
             st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
     else: st.info("Trống")
 
-# ==================== 6. MODULE RENDERERS ====================
+# ==================== 6. MODULE RENDERERS (CONTAINERS) ====================
 
 def render_thuchi_module(layout_mode):
     df = load_data_with_index()
@@ -434,7 +437,9 @@ def render_vattu_module():
             # 2. CHỌN VẬT TƯ
             st.markdown("👇 **Nhập chi tiết vật tư**")
             df_master = load_materials_master()
-            master_list = df_master['TenVT'].unique().tolist()
+            master_list = []
+            if not df_master.empty and 'TenVT' in df_master.columns:
+                master_list = df_master['TenVT'].unique().tolist()
             
             selected_vt = st.selectbox("📦 Chọn Tên Vật tư:", [""] + master_list + ["++ TẠO VẬT TƯ MỚI ++"])
             
@@ -448,9 +453,11 @@ def render_vattu_module():
             elif selected_vt != "":
                 vt_name_final = selected_vt
                 # Load thông tin cũ
-                row_data = df_master[df_master['TenVT'] == vt_name_final].iloc[0]
-                u1 = row_data['DVT_Cap1']; u2 = row_data['DVT_Cap2']
-                ratio = float(row_data['QuyDoi']); p1 = float(row_data['DonGia_Cap1'])
+                if not df_master.empty and 'TenVT' in df_master.columns:
+                    row_data = df_master[df_master['TenVT'] == vt_name_final].iloc[0]
+                    u1 = str(row_data['DVT_Cap1']); u2 = str(row_data['DVT_Cap2'])
+                    try: ratio = float(row_data['QuyDoi']); p1 = float(row_data['DonGia_Cap1'])
+                    except: ratio = 1.0; p1 = 0.0
 
             # 3. ĐỊNH NGHĨA (CHỈ HIỆN KHI MỚI)
             if is_new and vt_name_final:
@@ -513,7 +520,7 @@ def render_vattu_module():
     with vt_tabs[2]:
         st.markdown("**Danh mục Vật tư & Quy đổi**")
         df_m = load_materials_master()
-        if not df_m.empty:
+        if not df_m.empty and 'TenVT' in df_m.columns:
             for i, row in df_m.iterrows():
                 c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
                 c1.write(f"**{row['TenVT']}**")
@@ -536,7 +543,7 @@ def render_vattu_module():
                 data = export_project_materials_excel(df_exp, p_code, p_sel)
                 st.download_button("⬇️ Download Excel", data, f"VatTu_{p_code}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ==================== 7. CHẠY ỨNG DỤNG (MAIN EXECUTION) ====================
+# ==================== 7. APP EXECUTION ====================
 with st.sidebar:
     st.title("⚙️ Cài đặt")
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
@@ -549,4 +556,4 @@ main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
 with main_tabs[0]: render_thuchi_module(layout_mode)
 with main_tabs[1]: render_vattu_module()
 
-st.markdown("<div class='app-footer'>Phiên bản: 5.2 Final Fixed - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-footer'>Phiên bản: 5.3 Final Stable - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
