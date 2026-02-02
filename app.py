@@ -14,7 +14,7 @@ import string
 import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (FORCE LIGHT THEME & HIGH CONTRAST)
+# 1. CẤU HÌNH & CSS (ADAPTIVE THEME)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -25,115 +25,88 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* --- 1. ÉP GIAO DIỆN SÁNG (LIGHT MODE FORCE) --- */
-    [data-testid="stAppViewContainer"] {
-        background-color: #f8f9fa; /* Nền xám nhạt dễ chịu */
-    }
-    [data-testid="stSidebar"] {
-        background-color: #ffffff; /* Sidebar trắng */
-        border-right: 1px solid #e5e7eb;
+    /* 1. Tối ưu lề & Ẩn phần thừa */
+    .block-container { padding-top: 1.5rem !important; padding-bottom: 3rem !important; }
+    [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, #MainMenu { display: none !important; }
+    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
+
+    /* 2. ADAPTIVE CARD STYLE (Tự động theo giao diện Sáng/Tối) */
+    /* Sử dụng biến màu của Streamlit để tương thích */
+    .balance-box {
+        background-color: var(--secondary-background-color);
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid var(--secondary-background-color);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        text-align: center;
     }
     
-    /* Chữ luôn màu đen */
-    h1, h2, h3, h4, h5, h6, p, span, div, label {
-        color: #111827 !important; 
-        font-family: 'Segoe UI', Roboto, sans-serif;
-    }
-
-    /* --- 2. INPUT FORM CHUYÊN NGHIỆP --- */
-    .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"] {
-        background-color: #ffffff !important;
-        color: #000000 !important;
-        border: 1px solid #ced4da !important;
-        border-radius: 6px;
+    /* Input Form đậm hơn chút để dễ nhìn */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
         font-weight: 600;
     }
+
+    /* 3. BUTTONS */
+    /* Nút Submit Form màu nổi bật */
+    [data-testid="stFormSubmitButton"] > button {
+        width: 100%;
+        font-weight: 800 !important;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        transition: all 0.2s;
+        border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    /* Nút icon nhỏ trong bảng */
+    div[data-testid="column"] button {
+        padding: 0px 10px !important;
+        min-height: 35px !important;
+        border: 1px solid var(--text-color);
+        font-weight: bold;
+    }
+
+    /* 4. TABLE STYLE (ADAPTIVE) */
+    .excel-header {
+        background-color: var(--secondary-background-color);
+        font-weight: 800;
+        padding: 10px 5px;
+        border-bottom: 2px solid var(--primary-color);
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        color: var(--text-color);
+    }
     
-    /* --- 3. LOGIN BOX PRO --- */
+    .excel-row {
+        border-bottom: 1px solid var(--secondary-background-color);
+        padding: 8px 5px;
+        font-size: 0.95rem;
+        display: flex;
+        align-items: center;
+    }
+    
+    /* Màu sắc tiền tệ luôn giữ nguyên để dễ nhận biết */
+    .money-inc { color: #22c55e !important; font-weight: 700; font-family: monospace; }
+    .money-exp { color: #ef4444 !important; font-weight: 700; font-family: monospace; }
+    
+    /* 5. TEXT STYLES */
+    .cell-primary { font-weight: 600; color: var(--text-color); font-size: 1rem; }
+    .cell-secondary { font-size: 0.85rem; opacity: 0.8; font-style: italic; }
+    .balance-val { font-size: 2.2rem; font-weight: 900; color: var(--primary-color); }
+
+    /* Login Form căn giữa */
     .login-container {
         display: flex; justify-content: center; margin-top: 50px;
     }
-    .login-card {
-        background: white;
-        padding: 40px;
-        border-radius: 12px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        width: 100%;
-        max-width: 450px;
-        text-align: center;
-        border: 1px solid #e5e7eb;
-    }
-    .login-header { font-size: 1.8rem; font-weight: 800; color: #1e40af !important; margin-bottom: 5px; }
-    .login-sub { color: #6b7280 !important; font-size: 0.9rem; margin-bottom: 25px; }
-
-    /* --- 4. BUTTONS --- */
-    /* Nút chính (Lưu/Thêm) - Màu Xanh đậm */
-    [data-testid="stFormSubmitButton"] > button {
-        background-color: #1e40af !important;
-        color: white !important;
-        border: none;
-        font-weight: 700;
-        width: 100%;
-        padding: 10px;
-        transition: 0.3s;
-    }
-    [data-testid="stFormSubmitButton"] > button:hover { background-color: #1e3a8a !important; }
-
-    /* Nút Icon Sửa/Xóa */
-    div[data-testid="column"] button {
-        border: 1px solid #d1d5db;
-        background-color: white;
-        color: #374151 !important;
-        border-radius: 4px;
-        padding: 4px 8px;
-        min-height: 32px;
-        font-size: 0.8rem;
-    }
-    div[data-testid="column"] button:hover { background-color: #f3f4f6; border-color: #9ca3af; }
-
-    /* --- 5. BẢNG DỮ LIỆU (EXCEL STYLE) --- */
-    .excel-header {
-        background-color: #e5e7eb; /* Header xám */
-        padding: 10px 5px;
-        font-weight: 700;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        border-bottom: 2px solid #9ca3af;
-        color: #374151 !important;
-    }
-    .excel-row {
-        background-color: white;
-        border-bottom: 1px solid #e5e7eb;
-        padding: 8px 5px;
-        font-size: 0.95rem;
-        display: flex; align-items: center;
-    }
-    .excel-row:hover { background-color: #f0f9ff; } /* Hover xanh nhạt */
     
-    .cell-main { font-weight: 600; color: #111827 !important; }
-    .cell-sub { font-size: 0.8rem; color: #6b7280 !important; font-style: italic; }
-    .money-inc { color: #16a34a !important; font-weight: 700; font-family: monospace; }
-    .money-exp { color: #dc2626 !important; font-weight: 700; font-family: monospace; }
-
-    /* --- 6. DASHBOARD --- */
-    .balance-box {
-        background: white;
-        border-radius: 10px;
-        padding: 20px;
-        border-left: 6px solid #2563eb;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-    }
-    .bal-val { font-size: 2.2rem; font-weight: 800; color: #1e3a8a !important; }
+    /* Footer */
+    .app-footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px dashed var(--text-color); opacity: 0.6; font-size: 0.8rem; }
     
-    /* Ẩn phần thừa */
-    [data-testid="stDecoration"], [data-testid="stToolbar"], footer, header { display: none !important; }
-    .block-container { padding-top: 1rem; }
-    
+    [data-testid="stStatusWidget"] { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== 2. KẾT NỐI API & TIỆN ÍCH ====================
+# ==================== 2. KẾT NỐI API ====================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource(show_spinner=False)
@@ -183,7 +156,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 3. DATA LAYER (FIXED) ====================
+# ==================== 3. DATA LAYER (FIXED WS VARIABLE) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -295,12 +268,11 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT (FIXED WS ERROR) ====================
+# ==================== 4. EXCEL EXPORT (FIXED VARIABLE NAME) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        # Font & Styles
         font_name = 'Times New Roman'
         fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name})
         fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': font_name})
@@ -316,11 +288,11 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter', 'font_name': font_name})
         fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter', 'font_name': font_name})
 
-        # SỬ DỤNG BIẾN ws THỐNG NHẤT
+        # FIX: DÙNG BIẾN ws THAY VÌ worksheet
         ws = workbook.add_worksheet("SoQuy")
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         ws.merge_range('A2:F2', f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
-        ws.merge_range('A3:F3', f"Hệ thống ERP Cá Nhân - Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
+        ws.merge_range('A3:F3', f"Hệ thống ERP - Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
         ws.merge_range('A4:F4', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
@@ -405,43 +377,27 @@ def process_report_data(df, start_date=None, end_date=None):
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# ==================== 5. UI COMPONENTS ====================
-
+# ==================== 5. DASHBOARD & AUTH ====================
 def render_dashboard_box(bal, thu, chi):
     st.markdown(f"""
     <div class='balance-box'>
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <div style='font-size:0.9rem; font-weight:600; text-transform:uppercase;'>SỐ DƯ HIỆN TẠI</div>
-                <div class='bal-val'>{format_vnd(bal)}</div>
-            </div>
-            <div style="text-align:right">
-                <div style="color:#16a34a; font-weight:700; margin-bottom:5px;">⬇️ THU: {format_vnd(thu)}</div>
-                <div style="color:#dc2626; font-weight:700">⬆️ CHI: {format_vnd(chi)}</div>
-            </div>
+        <div style="font-size:1.1rem; opacity:0.8; margin-bottom:5px;">SỐ DƯ HIỆN TẠI</div>
+        <div class='balance-val'>{format_vnd(bal)}</div>
+        <div style="display:flex; justify-content:space-between; margin-top:15px; border-top:1px dashed rgba(0,0,0,0.1); padding-top:10px;">
+            <div style="color:#16a34a; font-weight:700">⬇️ THU: {format_vnd(thu)}</div>
+            <div style="color:#dc2626; font-weight:700">⬆️ CHI: {format_vnd(chi)}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-# --- AUTH (LOGIN CARD PRO) ---
 def check_password():
     if 'role' not in st.session_state: st.session_state.role = None
     if st.session_state.role is None:
-        st.markdown(
-            """
-            <div class="login-container">
-                <div class="login-card">
-                    <div class="login-header">HỆ THỐNG ERP</div>
-                    <div class="login-sub">Đăng nhập để quản lý tài chính & vật tư</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Form đăng nhập (Overlay bằng cột để căn giữa)
-        c1, c2, c3 = st.columns([1, 1, 1])
+        c1, c2, c3 = st.columns([1, 1.5, 1])
         with c2:
+            st.markdown("<br><br><h2 style='text-align:center; color:#1e3a8a;'>HỆ THỐNG ERP</h2>", unsafe_allow_html=True)
             with st.form("login"):
-                u = st.text_input("Tên đăng nhập (admin/viewer):").lower().strip()
+                u = st.text_input("Tên đăng nhập:").strip()
                 p = st.text_input("Mật khẩu:", type="password")
                 if st.form_submit_button("ĐĂNG NHẬP"):
                     with st.spinner("Đang xác thực..."):
@@ -462,15 +418,13 @@ def change_password_ui():
 # --- THU CHI UI (FIXED EDIT & BUTTONS) ---
 def render_thuchi_module(is_laptop):
     df = load_data_with_index()
-    
-    # 1. Dashboard
     render_dashboard_box(
         df['SignedAmount' if 'SignedAmount' in df else 'SoTien'].sum() if not df.empty else 0,
         df[df['Loai']=='Thu']['SoTien'].sum() if not df.empty else 0,
         df[df['Loai']=='Chi']['SoTien'].sum() if not df.empty else 0
     )
 
-    # --- INPUT FORM (LEFT/TOP) ---
+    # --- INPUT FORM ---
     def render_input_tc():
         if st.session_state.role != 'admin': return
         if 'edit_tc_id' not in st.session_state: st.session_state.edit_tc_id = None
@@ -497,8 +451,9 @@ def render_thuchi_module(is_laptop):
 
             btn_txt = "CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"
             
-            # NÚT SUBMIT LUÔN NẰM TRONG FORM (FIX LỖI MISSING SUBMIT)
-            if st.form_submit_button(btn_txt):
+            # FIX: NÚT SUBMIT LUÔN NẰM TRONG FORM
+            submitted = st.form_submit_button(btn_txt)
+            if submitted:
                 if d_amt > 0 and d_desc:
                     if is_edit:
                         update_transaction(st.session_state.edit_tc_id, d_date, d_type, d_amt, d_desc, "")
@@ -513,7 +468,7 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-    # --- LIST VIEW (RIGHT/BOTTOM) ---
+    # --- LIST VIEW ---
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
@@ -607,7 +562,6 @@ def render_vattu_module(is_laptop):
                     qty = c1.number_input("Số lượng:", 0.0)
                     note = c2.text_input("Ghi chú")
                     
-                    # NÚT SUBMIT TRONG FORM
                     if st.form_submit_button("➕ THÊM VÀO DỰ ÁN"):
                         if qty > 0:
                             u1 = auto_capitalize(u1); u2 = auto_capitalize(u2)
@@ -632,7 +586,6 @@ def render_vattu_module(is_laptop):
                 dv = df_pj[df_pj['TenDuAn'] == vp]
                 st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
                 
-                # Edit Form
                 if st.session_state.role == 'admin':
                     if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                     if st.session_state.edit_vt_id:
@@ -656,7 +609,6 @@ def render_vattu_module(is_laptop):
                     with c4:
                         if st.session_state.role == 'admin':
                             b1, b2 = st.columns(2)
-                            # FIX KEY DUPLICATE
                             if b1.button("✏️", key=f"vt_e_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
                             if b2.button("🗑️", key=f"vt_d_{r['Row_Index']}"): delete_material_row(r['Row_Index']); st.rerun()
                     st.markdown("<div style='border-bottom:1px solid #f1f5f9'></div>", unsafe_allow_html=True)
@@ -706,4 +658,4 @@ if check_password():
         with main_tabs[0]: render_thuchi_module(is_laptop)
         with main_tabs[1]: render_vattu_module(is_laptop)
 
-    st.markdown("<div class='app-footer'>Phiên bản: 9.4 Emergency Fix & Pro UI - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+    st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
