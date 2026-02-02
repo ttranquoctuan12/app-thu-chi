@@ -13,17 +13,18 @@ import random
 import string
 
 # ==================== 1. CẤU HÌNH & CSS ====================
-st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
 st.markdown("""
 <style>
+    /* Lề trang */
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
     
     /* ẨN ICON THỪA */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], 
     .stAppDeployButton, [data-testid="stStatusWidget"], footer, #MainMenu { display: none !important; }
 
-    /* HEADER & SIDEBAR */
+    /* HEADER & SIDEBAR BUTTON FIX */
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important; visibility: visible !important;
@@ -94,11 +95,11 @@ def generate_material_code(name):
     suffix = ''.join(random.choices(string.digits, k=3))
     return f"VT{initials}{suffix}"
 
-# ==================== 3. DATA LAYER ====================
+# ==================== 3. DATA LAYER (CRUD) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=300)
-def load_data_with_index(): # Thu Chi
+def load_data_with_index(): # Load Thu Chi
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
         data = sheet.get_all_records(); df = pd.DataFrame(data)
@@ -110,22 +111,24 @@ def load_data_with_index(): # Thu Chi
     except: return pd.DataFrame()
 
 @st.cache_data(ttl=300)
-def load_materials_master(): # Danh mục VT
+def load_materials_master(): # Load Danh mục VT
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("dm_vattu")
         return pd.DataFrame(sheet.get_all_records())
     except: return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
 
 @st.cache_data(ttl=300)
-def load_project_data(): # Data Dự án
+def load_project_data(): # Load Data Dự án
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
         data = sheet.get_all_records(); df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame(columns=["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu"])
         for col in ['SoLuong', 'DonGia', 'ThanhTien']: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        df['Row_Index'] = range(2, len(df) + 2) # Index để xóa
         return df
     except: return pd.DataFrame()
 
+# --- GHI THU CHI ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
@@ -140,6 +143,7 @@ def delete_transaction(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
+# --- GHI VẬT TƯ ---
 def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, price_unit1, selected_unit, qty, note, is_new_item=False):
     client = get_gs_client(); wb = client.open("QuanLyThuChi")
     
@@ -164,7 +168,7 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, p
     
     thanh_tien = qty * final_price
     
-    # 3. Ghi vào Data Du An
+    # 3. Ghi Data
     try: ws_data = wb.worksheet("data_duan")
     except: ws_data = wb.add_worksheet("data_duan", 1000, 10); ws_data.append_row(["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu"])
         
@@ -175,6 +179,10 @@ def delete_material_master(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("dm_vattu")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
+def delete_project_data_row(row_idx):
+    client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
+    sheet.delete_rows(int(row_idx)); clear_data_cache()
+
 def upload_image_to_drive(image_file, file_name):
     try:
         creds = get_creds(); service = build('drive', 'v3', credentials=creds); folder_id = st.secrets["DRIVE_FOLDER_ID"]
@@ -183,7 +191,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 4. EXCEL EXPORT ====================
+# ==================== 4. EXCEL EXPORT HELPERS ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -276,7 +284,8 @@ def process_report_data(df, start_date=None, end_date=None):
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# ==================== 5. UI COMPONENTS ====================
+# ==================== 5. UI SUB-COMPONENTS (DEFINED BEFORE MODULES) ====================
+
 def render_dashboard_box(bal, thu, chi):
     text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
     html_content = f"""
@@ -293,7 +302,8 @@ def render_dashboard_box(bal, thu, chi):
 """
     st.markdown(html_content, unsafe_allow_html=True)
 
-def render_tc_input():
+# --- THU CHI COMPONENTS ---
+def render_thuchi_input():
     with st.container(border=True):
         st.subheader("➕ Nhập Giao Dịch")
         if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
@@ -318,7 +328,7 @@ def render_tc_input():
                 st.success("Đã lưu!"); st.session_state.new_amount = 0; st.session_state.new_desc = ""; st.session_state.a_new = 0; st.session_state.desc_new = ""; time.sleep(0.5); st.rerun()
             else: st.warning("Thiếu thông tin!")
 
-def render_tc_history(df):
+def render_thuchi_history(df):
     if df.empty: st.info("Trống"); return
     if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
     if st.session_state.edit_row_index is not None:
@@ -333,18 +343,25 @@ def render_tc_history(df):
             b1, b2 = st.columns(2)
             if b1.button("💾 LƯU", type="primary", use_container_width=True): update_transaction(st.session_state.edit_row_index, u_d, u_t, u_a, u_desc, row['HinhAnh']); st.session_state.edit_row_index = None; st.rerun()
             if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
-    for i, r in df.sort_values(by='Ngay', ascending=False).head(50).iterrows():
+    df_sorted = df.sort_values(by='Ngay', ascending=False)
+    h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
+    for index, row in df_sorted.head(50).iterrows():
         c1, c2, c3 = st.columns([2, 1, 1], gap="small")
-        with c1: st.markdown(f"<div class='desc-text'>{r['MoTa']}</div><div class='date-text'>{'🟢' if r['Loai']=='Thu' else '🔴'} {r['Ngay'].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True); 
-        if r['HinhAnh']: st.markdown(f"<a href='{r['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
-        with c2: st.markdown(f"<div class='amt-text' style='color:{'#27ae60' if r['Loai']=='Thu' else '#c0392b'}'>{format_vnd(r['SoTien'])}</div>", unsafe_allow_html=True)
+        with c1:
+            icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
+            st.markdown(f"<div class='desc-text'>{row['MoTa']}</div><div class='date-text'>{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
+            if row['HinhAnh']: st.markdown(f"<a href='{row['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
+        with c2:
+            color = "#27ae60" if row['Loai'] == 'Thu' else "#c0392b"
+            st.markdown(f"<div class='amt-text' style='color:{color}'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
         with c3:
-            b1, b2 = st.columns(2)
-            if b1.button("✏️", key=f"e_{r['Row_Index']}"): st.session_state.edit_row_index = r['Row_Index']; st.rerun()
-            if b2.button("🗑️", key=f"d_{r['Row_Index']}"): delete_transaction(r['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
+            bc1, bc2 = st.columns(2)
+            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
+            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
         st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
+    if len(df) > 50: st.caption("... và còn nhiều giao dịch cũ hơn")
 
-def render_tc_report(df):
+def render_thuchi_report(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
     today = get_vn_time(); d30 = today - timedelta(days=30)
     col_d1, col_d2 = st.columns(2)
@@ -353,22 +370,27 @@ def render_tc_report(df):
     df_report = process_report_data(df, start_d, end_d)
     if not df_report.empty:
         def color_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
-        def highlight(row): return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row) if row['Loai'] == 'Thu' else (['background-color: #E0E0E0; font-style: italic'] * len(row) if row['Loai'] == 'Open' else [''] * len(row))
+        def highlight(row): 
+            if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
+            if row['Loai'] == 'Open': return ['background-color: #E0E0E0; font-style: italic'] * len(row)
+            return [''] * len(row)
         st.dataframe(df_report.style.apply(highlight, axis=1).map(color_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}), column_config={"STT": st.column_config.NumberColumn("STT", width="small"), "Khoan": st.column_config.TextColumn("Khoản", width="large"), "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", "SoTienShow": "Số tiền", "ConLai": "Còn lại", "Loai": None}, hide_index=True, use_container_width=True, height=500)
-        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if df_report['ConLai'].iloc[-1] < 0 else 'black'}'>{format_vnd(df_report['ConLai'].iloc[-1])}</span></div>", unsafe_allow_html=True)
+        final_bal = df_report['ConLai'].iloc[-1]
+        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
     else: st.warning("Không có dữ liệu.")
 
-def render_tc_export(df):
+def render_thuchi_export(df):
     st.write("📥 **Xuất Excel Sổ Quỹ**")
     if not df.empty:
-        c1, c2 = st.columns(2); d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
+        c1, c2 = st.columns(2)
+        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
         if st.button("Tải File", type="primary", use_container_width=True):
             with st.spinner("Đang tạo file..."):
                 df_r = process_report_data(df, d1, d2); data = convert_df_to_excel_custom(df_r, d1, d2)
             st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
     else: st.info("Trống")
 
-# ==================== 6. MODULE THU CHI & VẬT TƯ ====================
+# ==================== 6. MODULE RENDERERS ====================
 
 def render_thuchi_module(layout_mode):
     df = load_data_with_index()
@@ -378,18 +400,18 @@ def render_thuchi_module(layout_mode):
 
     if "Laptop" in layout_mode:
         col_left, col_right = st.columns([1, 1.8], gap="medium")
-        with col_left: render_input_form()
+        with col_left: render_thuchi_input()
         with col_right:
             t1, t2, t3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
-            with t1: render_tc_report(df)
-            with t2: render_tc_history(df)
-            with t3: render_tc_export(df)
+            with t1: render_thuchi_report(df)
+            with t2: render_thuchi_history(df)
+            with t3: render_thuchi_export(df)
     else:
         t1, t2, t3, t4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
-        with t1: render_input_form()
-        with t2: render_tc_history(df)
-        with t3: render_tc_report(df)
-        with t4: render_tc_export(df)
+        with t1: render_thuchi_input()
+        with t2: render_thuchi_history(df)
+        with t3: render_thuchi_report(df)
+        with t4: render_thuchi_export(df)
 
 def render_vattu_module():
     vt_tabs = st.tabs(["➕ NHẬP VẬT TƯ", "📜 LỊCH SỬ DỰ ÁN", "📦 QUẢN LÝ KHO", "📥 XUẤT BÁO CÁO"])
@@ -514,7 +536,7 @@ def render_vattu_module():
                 data = export_project_materials_excel(df_exp, p_code, p_sel)
                 st.download_button("⬇️ Download Excel", data, f"VatTu_{p_code}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ==================== 7. APP EXECUTION ====================
+# ==================== 7. CHẠY ỨNG DỤNG (MAIN EXECUTION) ====================
 with st.sidebar:
     st.title("⚙️ Cài đặt")
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
@@ -527,4 +549,4 @@ main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
 with main_tabs[0]: render_thuchi_module(layout_mode)
 with main_tabs[1]: render_vattu_module()
 
-st.markdown("<div class='app-footer'>Phiên bản: 5.1 Linear Flow - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-footer'>Phiên bản: 5.2 Final Fixed - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
