@@ -11,6 +11,7 @@ import unicodedata
 import pytz
 import random
 import string
+import difflib
 
 # ==================== 1. CẤU HÌNH & CSS ====================
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
@@ -40,8 +41,13 @@ st.markdown("""
     
     .vt-def-box { background-color: #e3f2fd; padding: 15px; border-radius: 10px; border: 1px dashed #1565C0; margin-bottom: 15px; font-weight: bold; color: #0d47a1; }
     .vt-input-box { background-color: #f1f8e9; padding: 15px; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 15px; font-weight: bold; color: #1b5e20; }
-    .total-row { background-color: #fff3cd; color: #b71c1c !important; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
     
+    .suggestion-box {
+        background-color: #fff9c4; border-left: 5px solid #fbc02d; padding: 10px;
+        margin-top: -10px; margin-bottom: 15px; border-radius: 4px;
+    }
+    
+    .total-row { background-color: #fff3cd; color: #b71c1c !important; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
     .compact-row { border-bottom: 1px solid #f0f0f0; padding: 8px 0; font-size: 0.9rem; display: flex; align-items: center; }
     .c-name { font-weight: 600; color: #2c3e50; }
     
@@ -189,32 +195,31 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 4. EXCEL EXPORT (FIXED NAME ERROR) ====================
+# ==================== 4. EXCEL EXPORT (ĐỒNG BỘ GIAO DIỆN) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
+        # Styles
         fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
         fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
-        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'})
-        fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter'})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
-        fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
+        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
 
         ws = workbook.add_worksheet("SoQuy")
         
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
-        date_str = f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}"
-        ws.merge_range('A2:F2', date_str, fmt_subtitle)
-        current_time_str = get_vn_time().strftime("%H:%M %d/%m/%Y")
-        ws.merge_range('A3:F3', f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}", fmt_info)
+        ws.merge_range('A2:F2', f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
+        ws.merge_range('A3:F3', f"Hệ thống Quyết toán - Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
         ws.merge_range('A4:F4', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
@@ -223,26 +228,20 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
 
         start_row_idx = 5
         for i, row in df_report.iterrows():
-            r = start_row_idx + i
-            loai = row['Loai']
-            bal = row['ConLai']
-            
+            r = start_row_idx + i; loai = row['Loai']; bal = row['ConLai']
             if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_money
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
 
-            ws.write(r, 0, row['STT'], c_fmt)
-            ws.write(r, 1, row['Khoan'], c_fmt)
-            ws.write(r, 2, row['NgayChi'], c_fmt)
-            ws.write(r, 3, row['NgayNhan'], c_fmt)
+            ws.write(r, 0, row['STT'], c_fmt); ws.write(r, 1, row['Khoan'], c_fmt)
+            ws.write(r, 2, row['NgayChi'], c_fmt); ws.write(r, 3, row['NgayNhan'], c_fmt)
             if loai == 'Open': ws.write(r, 4, "", m_fmt)
             else: ws.write(r, 4, row['SoTienShow'], m_fmt)
             ws.write(r, 5, bal, bal_fmt)
             
         l_row = start_row_idx + len(df_report)
-        fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
         ws.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot)
-        ws.write(l_row, 5, fin_bal, fmt_tot_v)
+        ws.write(l_row, 5, df_report['ConLai'].iloc[-1] if not df_report.empty else 0, fmt_tot_v)
         ws.set_row(0, 40); ws.set_row(1, 25); ws.set_row(4, 30)
     return output.getvalue()
 
@@ -250,31 +249,45 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter'})
-        fmt_total = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'num_format': '#,##0'})
-        fmt_num = workbook.add_format({'border': 1, 'num_format': '#,##0'})
+        # --- ĐỒNG BỘ STYLE ---
+        fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
+        fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
+        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        
+        fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_name': 'Times New Roman', 'font_size': 11})
+        fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_name': 'Times New Roman', 'font_size': 11})
+        fmt_total_label = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'font_size': 12})
+        fmt_total_val = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'font_size': 12})
         
         ws = workbook.add_worksheet("BangKeVatTu")
+        
+        # Tiêu đề đồng bộ 4 dòng
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
-        ws.merge_range('A2:G2', f"Dự án: {proj_name} (Mã: {proj_code})", workbook.add_format({'align': 'center', 'bold': True, 'font_size': 14}))
+        ws.merge_range('A2:G2', f"Dự án: {proj_name} (Mã: {proj_code})", fmt_subtitle)
+        ws.merge_range('A3:G3', f"Hệ thống - Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
+        ws.merge_range('A4:G4', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
         cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền"]
-        for i, h in enumerate(cols): ws.write(4, i, h, workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E0E0E0', 'align': 'center'}))
-        ws.set_column('A:A', 5); ws.set_column('B:B', 12); ws.set_column('C:C', 35); ws.set_column('E:G', 15)
+        for i, h in enumerate(cols): ws.write(4, i, h, fmt_header)
+        
+        ws.set_column('A:A', 5); ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('D:D', 10); ws.set_column('E:G', 15)
         
         row_idx = 5; total_money = 0
         for i, row in df_proj.iterrows():
-            ws.write(row_idx, 0, i+1, workbook.add_format({'border': 1}))
-            ws.write(row_idx, 1, row['MaVT'], workbook.add_format({'border': 1}))
-            ws.write(row_idx, 2, row['TenVT'], workbook.add_format({'border': 1}))
-            ws.write(row_idx, 3, row['DVT'], workbook.add_format({'border': 1}))
-            ws.write(row_idx, 4, row['SoLuong'], workbook.add_format({'border': 1}))
+            ws.write(row_idx, 0, i+1, fmt_cell)
+            ws.write(row_idx, 1, row['MaVT'], fmt_cell)
+            ws.write(row_idx, 2, row['TenVT'], fmt_cell)
+            ws.write(row_idx, 3, row['DVT'], fmt_cell)
+            ws.write(row_idx, 4, row['SoLuong'], fmt_cell) # SL có thể lẻ
             ws.write(row_idx, 5, row['DonGia'], fmt_num)
             ws.write(row_idx, 6, row['ThanhTien'], fmt_num)
             total_money += row['ThanhTien']; row_idx += 1
             
-        ws.merge_range(row_idx, 0, row_idx, 5, "TỔNG CỘNG TIỀN", fmt_total)
-        ws.write(row_idx, 6, total_money, fmt_total)
+        ws.merge_range(row_idx, 0, row_idx, 5, "TỔNG CỘNG TIỀN", fmt_total_label)
+        ws.write(row_idx, 6, total_money, fmt_total_val)
+        
+        ws.set_row(0, 40); ws.set_row(1, 25); ws.set_row(4, 30)
     return output.getvalue()
 
 def process_report_data(df, start_date=None, end_date=None):
@@ -399,29 +412,55 @@ def render_vattu_module():
     
     with vt_tabs[0]: # NHẬP LIỆU
         with st.container(border=True):
-            if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
-            p_name = st.text_input("📁 Tên Dự án:", value=st.session_state.curr_proj_name)
-            if p_name:
-                st.session_state.curr_proj_name = p_name
-                st.text_input("Mã Dự án:", value=generate_project_code(p_name), disabled=True)
+            df_pj = load_project_data()
+            existing_projects = []
+            if not df_pj.empty and 'TenDuAn' in df_pj.columns:
+                existing_projects = df_pj['TenDuAn'].unique().tolist()
+            
+            sel_proj_option = st.selectbox("📁 Chọn Dự án:", [""] + existing_projects + ["➕ TẠO DỰ ÁN MỚI"], key="sel_proj_main")
+            
+            final_proj_name = ""
+            if sel_proj_option == "➕ TẠO DỰ ÁN MỚI":
+                final_proj_name = st.text_input("Nhập tên dự án mới:", placeholder="VD: Nhà A Tuấn...")
+            elif sel_proj_option != "":
+                final_proj_name = sel_proj_option
+            
+            if final_proj_name:
+                st.session_state.curr_proj_name = final_proj_name
+                proj_code = ""
+                if sel_proj_option != "➕ TẠO DỰ ÁN MỚI" and not df_pj.empty:
+                     found = df_pj[df_pj['TenDuAn'] == final_proj_name]
+                     if not found.empty: proj_code = found.iloc[0]['MaDuAn']
+                if not proj_code: proj_code = generate_project_code(final_proj_name)
+                st.info(f"Mã Dự án: **{proj_code}**")
 
-        if st.session_state.curr_proj_name:
+        if 'curr_proj_name' in st.session_state and st.session_state.curr_proj_name:
             st.markdown("👇 **Nhập chi tiết vật tư**")
             df_m = load_materials_master()
             m_list = df_m['TenVT'].unique().tolist() if not df_m.empty and 'TenVT' in df_m.columns else []
             sel_vt = st.selectbox("📦 Chọn Vật tư:", [""] + m_list + ["++ TẠO VẬT TƯ MỚI ++"])
             
-            is_new = False; vt_final = ""; u1, u2, ratio, p1 = "", "", 1.0, 0.0
-            
+            # --- SMART SUGGESTION ---
             if sel_vt == "++ TẠO VẬT TƯ MỚI ++":
-                is_new = True; vt_final = st.text_input("Nhập tên mới:")
+                is_new = True
+                vt_final = st.text_input("Nhập tên mới:")
+                if vt_final and not df_m.empty and 'TenVT' in df_m.columns:
+                    matches = difflib.get_close_matches(vt_final, df_m['TenVT'].tolist(), n=3, cutoff=0.5)
+                    if matches:
+                        st.markdown(f"<div class='suggestion-box'>💡 <b>Có phải bạn muốn nhập:</b></div>", unsafe_allow_html=True)
+                        for match in matches:
+                            if st.button(f"👉 {match}", key=f"sug_{match}"):
+                                st.info(f"Vui lòng chọn **{match}** từ danh sách ở trên để tránh trùng lặp!")
             elif sel_vt != "":
+                is_new = False
                 vt_final = sel_vt
                 if not df_m.empty and 'TenVT' in df_m.columns:
                     row = df_m[df_m['TenVT'] == vt_final].iloc[0]
                     u1 = str(row.get('DVT_Cap1', '')); u2 = str(row.get('DVT_Cap2', ''))
                     try: ratio = float(row.get('QuyDoi', 1)); p1 = float(row.get('DonGia_Cap1', 0))
                     except: ratio=1.0; p1=0.0
+            else:
+                is_new = False; vt_final = ""; u1, u2, ratio, p1 = "", "", 1.0, 0.0
 
             if is_new and vt_final:
                 st.markdown(f"<div class='vt-def-box'>✨ Định nghĩa: {vt_final}</div>", unsafe_allow_html=True)
@@ -436,9 +475,9 @@ def render_vattu_module():
                 unit_ops = [f"{u1} (Cấp 1)", f"{u2} (Cấp 2)"] if u2 else [f"{u1} (Cấp 1)"]
                 if not u1: unit_ops = ["Mặc định"]
                 
-                # --- LOGIC MỚI: ƯU TIÊN CHỌN ĐVT NHỎ (Index 1) ---
-                def_index = 1 if u2 else 0 
-                u_choice = st.radio("Đơn vị xuất:", unit_ops, horizontal=True, index=def_index)
+                # Default index 1 (Cấp 2)
+                def_idx = 1 if u2 else 0
+                u_choice = st.radio("Đơn vị xuất:", unit_ops, horizontal=True, index=def_idx)
                 
                 sel_u = u1 if u1 and u1 in u_choice else (u2 if u2 else "Mặc định")
                 price_suggest = p1 if sel_u == u1 else (p1/ratio if ratio > 0 else 0)
@@ -450,14 +489,24 @@ def render_vattu_module():
                 
                 if st.button("➕ THÊM VÀO DỰ ÁN", type="primary", use_container_width=True, key="add_vt"):
                     if qty > 0:
-                        save_project_material(generate_project_code(st.session_state.curr_proj_name), st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1, sel_u, qty, note, is_new)
+                        p_code_save = ""
+                        if sel_proj_option != "➕ TẠO DỰ ÁN MỚI" and not df_pj.empty:
+                             f = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name]
+                             if not f.empty: p_code_save = f.iloc[0]['MaDuAn']
+                        if not p_code_save: p_code_save = generate_project_code(st.session_state.curr_proj_name)
+
+                        save_project_material(p_code_save, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1, sel_u, qty, note, is_new)
                         st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
             
             # Show list
-            df_pj = load_project_data()
-            p_code = generate_project_code(st.session_state.curr_proj_name)
             if not df_pj.empty and 'MaDuAn' in df_pj.columns:
-                curr = df_pj[df_pj['MaDuAn'] == p_code]
+                p_code_curr = ""
+                if sel_proj_option != "➕ TẠO DỰ ÁN MỚI":
+                     f = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name]
+                     if not f.empty: p_code_curr = f.iloc[0]['MaDuAn']
+                if not p_code_curr: p_code_curr = generate_project_code(st.session_state.curr_proj_name)
+
+                curr = df_pj[df_pj['MaDuAn'] == p_code_curr]
                 if not curr.empty:
                     st.divider()
                     st.markdown(f"**Danh sách vừa thêm:**")
@@ -514,13 +563,8 @@ def render_vattu_module():
                     data = export_project_materials_excel(agg, "ALL", "TỔNG HỢP")
                     st.download_button("Download Tổng Hợp", data, "TongHop.xlsx")
                 else:
-                    # Lấy mã dự án chuẩn
-                    p_c = ""
-                    f = df_pj[df_pj['TenDuAn'] == p_sel]
-                    if not f.empty: p_c = f.iloc[0]['MaDuAn']
-                    else: p_c = generate_project_code(p_sel)
-                    
-                    data = export_project_materials_excel(f, p_c, p_sel)
+                    p_c = generate_project_code(p_sel)
+                    data = export_project_materials_excel(df_pj[df_pj['TenDuAn'] == p_sel], p_c, p_sel)
                     st.download_button("Download Chi Tiết", data, f"VatTu_{p_c}.xlsx")
 
 # ==================== 8. APP RUN ====================
@@ -536,4 +580,4 @@ main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
 with main_tabs[0]: render_thuchi_module(layout_mode)
 with main_tabs[1]: render_vattu_module()
 
-st.markdown("<div class='app-footer'>Phiên bản: 6.5 Final Stable Patch - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-footer'>Phiên bản: 6.6 Unified Excel Style - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
