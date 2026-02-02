@@ -19,11 +19,9 @@ st.markdown("""
 <style>
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
     
-    /* ẨN ICON THỪA */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], 
     .stAppDeployButton, [data-testid="stStatusWidget"], footer, #MainMenu { display: none !important; }
 
-    /* HEADER & SIDEBAR */
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important; visibility: visible !important;
@@ -31,11 +29,9 @@ st.markdown("""
         z-index: 1000000;
     }
 
-    /* GIAO DIỆN CHUNG */
     [data-testid="stCameraInput"] { width: 100% !important; }
     .stTextInput input, .stNumberInput input { font-weight: bold; }
     
-    /* UI VẬT TƯ */
     .vt-def-box { 
         background-color: #e3f2fd; padding: 15px; border-radius: 10px; border: 1px dashed #1565C0; 
         margin-bottom: 15px; color: #0d47a1 !important; font-weight: bold;
@@ -57,7 +53,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== 2. TIỆN ÍCH HỆ THỐNG ====================
+# ==================== 2. KẾT NỐI API ====================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 @st.cache_resource
@@ -99,11 +95,11 @@ def generate_material_code(name):
     suffix = ''.join(random.choices(string.digits, k=3))
     return f"VT{initials}{suffix}"
 
-# ==================== 3. XỬ LÝ DỮ LIỆU (DATABASE) ====================
+# ==================== 3. XỬ LÝ DỮ LIỆU ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=300)
-def load_data_with_index(): 
+def load_data_with_index():
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
         data = sheet.get_all_records(); df = pd.DataFrame(data)
@@ -124,7 +120,7 @@ def load_materials_master():
     except: return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
 
 @st.cache_data(ttl=300)
-def load_project_data(): 
+def load_project_data():
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
         data = sheet.get_all_records(); df = pd.DataFrame(data)
@@ -134,7 +130,6 @@ def load_project_data():
         return df
     except: return pd.DataFrame()
 
-# --- GHI DỮ LIỆU ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
@@ -190,7 +185,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 4. EXCEL EXPORT HELPERS ====================
+# ==================== 4. EXCEL EXPORT ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -224,7 +219,6 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
         ws.merge_range('A2:G2', f"Dự án: {proj_name} (Mã: {proj_code})", workbook.add_format({'align': 'center', 'bold': True, 'font_size': 14}))
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", workbook.add_format({'align': 'center', 'italic': True}))
-        ws.merge_range('A4:G4', "Người tạo: TUẤN VDS.HCM", workbook.add_format({'align': 'center', 'italic': True}))
         
         cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền"]
         for i, h in enumerate(cols): ws.write(4, i, h, workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#E0E0E0', 'align': 'center'}))
@@ -297,7 +291,7 @@ def render_thuchi_input():
         st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
         cam = st.toggle("Dùng Camera", value=False)
         img = st.camera_input("Chụp", key="cam") if cam else st.file_uploader("Tải ảnh", key="up")
-        if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
+        if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True, key="btn_save_tc"):
             if d_amount > 0 and d_desc.strip():
                 link = upload_image_to_drive(img, f"{d_date}_{d_desc}.jpg") if img else ""
                 add_transaction(d_date, d_type, d_amount, d_desc, link)
@@ -311,7 +305,7 @@ def render_thuchi_history(df):
         with c1: st.markdown(f"**{r['MoTa']}**<br><span style='color:grey;font-size:0.8em'>{r['Ngay'].strftime('%d/%m')}</span>", unsafe_allow_html=True)
         with c2: st.markdown(f"<span style='color:{'green' if r['Loai']=='Thu' else 'red'};font-weight:bold'>{format_vnd(r['SoTien'])}</span>", unsafe_allow_html=True)
         with c3: 
-            if st.button("🗑️", key=f"del_{r['Row_Index']}"): delete_transaction(r['Row_Index']); st.rerun()
+            if st.button("🗑️", key=f"del_tc_{r['Row_Index']}"): delete_transaction(r['Row_Index']); st.rerun()
         st.divider()
 
 def render_thuchi_report(df):
@@ -321,7 +315,7 @@ def render_thuchi_report(df):
     st.dataframe(df_r, use_container_width=True)
 
 def render_thuchi_export(df):
-    if st.button("Tải Excel"):
+    if st.button("Tải Excel", key="btn_exp_tc"):
         data = convert_df_to_excel_custom(process_report_data(df), datetime.now(), datetime.now())
         st.download_button("Download", data, "SoQuy.xlsx")
 
@@ -383,8 +377,8 @@ def render_vattu_module():
                 c1, c2, c3, c4 = st.columns(4)
                 u1 = c1.text_input("ĐVT Lớn:", placeholder="Thùng")
                 u2 = c2.text_input("ĐVT Nhỏ:", placeholder="Cái")
-                ratio = c3.number_input("Quy đổi (1 Lớn = ? Nhỏ):", min_value=1.0, value=1.0, help="QUAN TRỌNG: Nhập số lượng thực tế.\nVD: 1 Cuộn dài 100m -> Nhập 100.\n1 Thùng có 24 cái -> Nhập 24.")
-                st.caption("⚠️ Lưu ý: Nhập số lượng quy đổi chính xác để tính giá đúng!")
+                # Hướng dẫn kỹ chỗ này để tránh lỗi tính giá
+                ratio = c3.number_input("Quy đổi (1 Lớn = ? Nhỏ):", min_value=1.0, value=1.0, help="Ví dụ: 1 Cuộn dài 100m -> Nhập 100. 1 Thùng có 24 cái -> Nhập 24.")
                 p1 = c4.number_input("Giá nhập (Lớn):", min_value=0.0, step=1000.0)
 
             if vt_final:
@@ -395,7 +389,7 @@ def render_vattu_module():
                 u_choice = st.radio("Đơn vị xuất:", unit_ops, horizontal=True)
                 sel_u = u1 if u1 and u1 in u_choice else (u2 if u2 else "Mặc định")
                 
-                # Logic tính giá (QUAN TRỌNG)
+                # Logic tính giá
                 price_suggest = p1 if sel_u == u1 else (p1/ratio if ratio > 0 else 0)
                 
                 c1, c2 = st.columns([1, 2])
@@ -403,7 +397,7 @@ def render_vattu_module():
                 c2.metric("Thành tiền (Tạm tính):", format_vnd(qty * price_suggest))
                 note = st.text_input("Ghi chú:")
                 
-                if st.button("➕ THÊM VÀO DỰ ÁN", type="primary", use_container_width=True):
+                if st.button("➕ THÊM VÀO DỰ ÁN", type="primary", use_container_width=True, key="btn_add_vt_new"):
                     if qty > 0:
                         save_project_material(generate_project_code(st.session_state.curr_proj_name), st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1, sel_u, qty, note, is_new)
                         st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
@@ -432,22 +426,19 @@ def render_vattu_module():
         if not df_m.empty and 'TenVT' in df_m.columns:
             st.dataframe(df_m)
             
-    with vt_tabs[3]: # XUẤT (CÓ TỔNG HỢP)
+    with vt_tabs[3]: # XUẤT
         df_pj = load_project_data()
         if not df_pj.empty:
-            # Thêm lựa chọn TỔNG HỢP
             p_opts = ["TẤT CẢ DỰ ÁN (TỔNG HỢP)"] + df_pj['TenDuAn'].unique().tolist()
             p_sel = st.selectbox("Chọn dự án xuất:", p_opts, key='xp')
             
-            if st.button("Tải Excel"):
+            if st.button("Tải Excel", key="btn_exp_vt_excel"):
                 if p_sel == "TẤT CẢ DỰ ÁN (TỔNG HỢP)":
-                    # Logic Tổng hợp
                     df_agg = df_pj.groupby(['MaVT', 'TenVT', 'DVT'], as_index=False).agg({'SoLuong': 'sum', 'ThanhTien': 'sum'})
                     df_agg['DonGia'] = df_agg.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
                     data = export_project_materials_excel(df_agg, "ALL", "TỔNG HỢP TẤT CẢ DỰ ÁN")
                     st.download_button("Download Tổng Hợp", data, "TongHopVatTu.xlsx")
                 else:
-                    # Logic dự án đơn lẻ
                     p_c = generate_project_code(p_sel)
                     d_xp = df_pj[df_pj['TenDuAn'] == p_sel]
                     data = export_project_materials_excel(d_xp, p_c, p_sel)
@@ -466,4 +457,4 @@ main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
 with main_tabs[0]: render_thuchi_module(layout_mode)
 with main_tabs[1]: render_vattu_module()
 
-st.markdown("<div class='app-footer'>Phiên bản: 5.5 Final Complete - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-footer'>Phiên bản: 5.6 Stable Fix - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
