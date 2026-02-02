@@ -53,14 +53,12 @@ st.markdown("""
         font-weight: 600; border-radius: 6px;
     }
     
-    /* Nút Submit (Đỏ) */
     [data-testid="stFormSubmitButton"] > button {
         width: 100%; background-color: #ff4b4b; color: white;
         font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px;
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút Logout Sidebar */
     .logout-btn { 
         width: 100%; border: 1px solid #ef4444; color: #ef4444; 
         font-weight: bold; border-radius: 5px; padding: 5px; 
@@ -157,7 +155,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 3. DATA LAYER (FIXED KEYS) ====================
+# ==================== 3. DATA LAYER ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -269,7 +267,7 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT (FIXED INDEX LOGIC) ====================
+# ==================== 4. EXCEL EXPORT (FIXED INDEX BUG) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -297,9 +295,8 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         for c, h in enumerate(headers): ws.write(5, c, h, fmt_header)
         ws.set_column('B:B', 40); ws.set_column('C:D', 15); ws.set_column('E:F', 18)
 
-        # Reset Index for clean loop
+        # FIX: Reset Index to fix gaps
         df_clean = df_report.reset_index(drop=True)
-        
         start_row_idx = 6
         for i, row in df_clean.iterrows():
             r = start_row_idx + i
@@ -332,7 +329,6 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
         
         ws = workbook.add_worksheet("BangKe")
-        
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
         ws.merge_range('A2:G2', f"Dự án: {proj_name}", fmt_subtitle)
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
@@ -343,9 +339,8 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         for i, h in enumerate(cols): ws.write(5, i, h, fmt_header)
         ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15)
         
-        # CRITICAL FIX: RESET INDEX TO AVOID GAPS
+        # FIX: Reset Index to avoid gaps
         df_clean = df_proj.reset_index(drop=True)
-        
         total = 0
         start_row_idx = 6
         for i, row in df_clean.iterrows():
@@ -459,7 +454,6 @@ def render_thuchi_module(is_laptop):
             c1, c2 = st.columns([1, 1])
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
-            
             d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=d_a, placeholder="0")
             d_desc = st.text_input("Mô tả", value=d_desc)
             img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
@@ -483,7 +477,7 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-    # LIST VIEW (STABLE KEYS)
+    # LIST VIEW (FIXED KEY)
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         
@@ -500,7 +494,7 @@ def render_thuchi_module(is_laptop):
                 with c4:
                     if st.session_state.role == 'admin':
                         b1, b2 = st.columns(2)
-                        # KEY CỐ ĐỊNH THEO ROW_INDEX (FIX LỖI NÚT KHÔNG ĂN)
+                        # KEY FIXED
                         if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): 
                             st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
                         if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): 
@@ -513,7 +507,6 @@ def render_thuchi_module(is_laptop):
             d1 = st.date_input("Từ ngày", get_vn_time().replace(day=1), key="d1_tc")
             d2 = st.date_input("Đến ngày", get_vn_time(), key="d2_tc")
             
-            # FILENAME UPDATE
             now_str = get_vn_time().strftime('%Hh%M')
             fname = f"Quyết toán từ {d1.strftime('%d-%m-%Y')} đến {d2.strftime('%d-%m-%Y')} {now_str}.xlsx"
             excel_data = convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2)
@@ -547,15 +540,30 @@ def render_vattu_module(is_laptop):
     # SYSTEM TITLE
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
 
+    # SYNC STATE MANAGEMENT
+    if 'current_proj_index' not in st.session_state: st.session_state.current_proj_index = 0
+
+    df_pj = load_project_data()
+    ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
+    p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex)) # Newest first
+
+    # SYNC LOGIC
+    def update_proj_index_from_input(): st.session_state.current_proj_index = st.session_state.sel_pj_in_idx
+    def update_proj_index_from_view(): st.session_state.current_proj_index = st.session_state.sel_pj_view_idx
+
+    # Ensure index is valid
+    if st.session_state.current_proj_index >= len(p_opts): st.session_state.current_proj_index = 0
+
     def render_input_vt():
         if st.session_state.role != 'admin': return
         with st.container(border=True):
-            df_pj = load_project_data()
-            ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
-            
-            # TẠO MỚI LUÔN Ở ĐẦU
-            p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
-            sel_p = st.selectbox("📁 Dự án:", p_opts, index=1 if len(ex)>0 else 0, key="sel_pj_main")
+            # Selectbox with State Sync
+            sel_p = st.selectbox(
+                "📁 Dự án:", p_opts, 
+                index=st.session_state.current_proj_index, 
+                key="sel_pj_in_idx", 
+                on_change=update_proj_index_from_input
+            )
             
             fin_p = st.text_input("Tên dự án:") if sel_p == "++ TẠO DỰ ÁN MỚI ++" else sel_p
             fin_p = auto_capitalize(fin_p)
@@ -597,7 +605,6 @@ def render_vattu_module(is_laptop):
                     p1 = c4.number_input("Giá nhập", min_value=0.0, value=None, placeholder="0")
                 
                 with st.form("vt_add"):
-                    # FIX: RADIO INDEX ERROR
                     unit_ops = []
                     if u1: unit_ops.append(f"{u1} (Cấp 1)")
                     if u2: unit_ops.append(f"{u2} (Cấp 2)")
@@ -628,55 +635,56 @@ def render_vattu_module(is_laptop):
                             st.success("OK"); time.sleep(0.5); st.rerun()
 
     def render_list_vt():
-        df_pj = load_project_data()
-        if not df_pj.empty:
-            pjs = df_pj['TenDuAn'].unique().tolist()
-            idx = 0
-            if 'curr_proj_name' in st.session_state and st.session_state.curr_proj_name in pjs:
-                idx = pjs.index(st.session_state.curr_proj_name)
+        # Selectbox Sync
+        vp_idx = st.session_state.current_proj_index
+        if vp_idx >= len(p_opts): vp_idx = 0
+        
+        vp = st.selectbox(
+            "Xem dự án:", p_opts, 
+            index=vp_idx, 
+            key="sel_pj_view_idx",
+            on_change=update_proj_index_from_view
+        )
+        
+        if vp and vp != "++ TẠO DỰ ÁN MỚI ++" and not df_pj.empty:
+            dv = df_pj[df_pj['TenDuAn'] == vp]
+            st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
-            vp = st.selectbox("Xem dự án:", pjs, index=idx, key="sel_pj_view")
-            if vp:
-                dv = df_pj[df_pj['TenDuAn'] == vp]
-                st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
-                
-                # Edit Form
-                if st.session_state.role == 'admin':
-                    if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
-                    if st.session_state.edit_vt_id:
-                        re = df_pj[df_pj['Row_Index'] == st.session_state.edit_vt_id]
-                        if not re.empty:
-                            re = re.iloc[0]
-                            with st.form("ed_vt"):
-                                st.info(f"Sửa: {re['TenVT']}")
-                                nq = st.number_input("SL mới:", value=float(re['SoLuong']))
-                                nn = st.text_input("Ghi chú:", value=re['GhiChu'])
-                                if st.form_submit_button("CẬP NHẬT"):
-                                    update_material_row(st.session_state.edit_vt_id, nq, re['DonGia'], nn)
-                                    st.session_state.edit_vt_id = None; st.rerun()
-                                if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
+            # Edit Form
+            if st.session_state.role == 'admin':
+                if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
+                if st.session_state.edit_vt_id:
+                    re = df_pj[df_pj['Row_Index'] == st.session_state.edit_vt_id]
+                    if not re.empty:
+                        re = re.iloc[0]
+                        with st.form("ed_vt"):
+                            st.info(f"Sửa: {re['TenVT']}")
+                            nq = st.number_input("SL mới:", value=float(re['SoLuong']))
+                            nn = st.text_input("Ghi chú:", value=re['GhiChu'])
+                            if st.form_submit_button("CẬP NHẬT"):
+                                update_material_row(st.session_state.edit_vt_id, nq, re['DonGia'], nn)
+                                st.session_state.edit_vt_id = None; st.rerun()
+                            if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
-                # SCROLL CONTAINER
-                container = st.container(height=600) if is_laptop else st.container()
-                with container:
-                    for i, r in dv.iterrows():
-                        c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
-                        c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}</div>", unsafe_allow_html=True)
-                        c2.write(f"{r['SoLuong']}")
-                        c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
-                        with c4:
-                            if st.session_state.role == 'admin':
-                                b1, b2 = st.columns(2)
-                                # KEY CỐ ĐỊNH (STABLE)
-                                if b1.button("✏️", key=f"btn_edt_vt_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
-                                if b2.button("🗑️", key=f"btn_del_vt_{r['Row_Index']}"): delete_material_row(r['Row_Index']); st.rerun()
-                        st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
-                
-                st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
+            container = st.container(height=600) if is_laptop else st.container()
+            with container:
+                for i, r in dv.iterrows():
+                    c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
+                    c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}</div>", unsafe_allow_html=True)
+                    c2.write(f"{r['SoLuong']}")
+                    c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
+                    with c4:
+                        if st.session_state.role == 'admin':
+                            b1, b2 = st.columns(2)
+                            # KEY FIXED
+                            if b1.button("✏️", key=f"btn_edt_vt_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
+                            if b2.button("🗑️", key=f"btn_del_vt_{r['Row_Index']}"): delete_material_row(r['Row_Index']); st.rerun()
+                    st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
+            
+            st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
 
     # --- TAB XUẤT VẬT TƯ CHUNG ---
     def render_export_vt():
-        df_pj = load_project_data()
         if not df_pj.empty:
             xp = st.selectbox("Dự án xuất:", ["TẤT CẢ"] + df_pj['TenDuAn'].unique().tolist(), key="xp_vt_stable")
             
@@ -715,7 +723,7 @@ def render_vattu_module(is_laptop):
 
 # ==================== 8. APP RUN ====================
 if check_password():
-    # TOP BAR (Only Hello & Laptop Mode)
+    # TOP BAR
     col_user, col_mode = st.columns([8, 2])
     with col_user:
         role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
@@ -730,7 +738,7 @@ if check_password():
         st.header("⚙️ CÀI ĐẶT")
         
         # LOGOUT BUTTON IN SIDEBAR
-        if st.button("🚪 Đăng xuất", use_container_width=True):
+        if st.button("🚪 Đăng xuất", key="logout_sidebar"):
             st.session_state.role = None; st.rerun()
             
         change_password_ui()
