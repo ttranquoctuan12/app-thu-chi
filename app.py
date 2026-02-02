@@ -276,7 +276,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_size': 11, 'font_name': font_name})
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
-        
+
         ws = workbook.add_worksheet("SoQuy")
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         ws.merge_range('A2:F2', f"Từ {start_date.strftime('%d/%m/%Y')} đến {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
@@ -354,17 +354,25 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
 def process_report_data(df, start_date=None, end_date=None):
     if df.empty: return pd.DataFrame()
     df_all = df.sort_values(by=['Ngay', 'Row_Index']).copy()
+    
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
+    
     if start_date and end_date:
         mask_before = df_all['Ngay'].dt.date < start_date
         df_before = df_all[mask_before]
         opening_balance = df_before.iloc[-1]['ConLai'] if not df_before.empty else 0
+        
         mask_in = (df_all['Ngay'].dt.date >= start_date) & (df_all['Ngay'].dt.date <= end_date)
         df_proc = df_all[mask_in].copy()
+        
+        if not df_proc.empty:
+            df_proc['ConLai'] = opening_balance + df_proc['SignedAmount'].cumsum()
+            
         row_open = {'Row_Index': 0, 'Ngay': pd.Timestamp(start_date), 'Loai': 'Open', 'SoTien': 0, 'MoTa': f"Số dư đầu kỳ", 'HinhAnh': '', 'ConLai': opening_balance, 'SignedAmount': 0}
         df_proc = pd.concat([pd.DataFrame([row_open]), df_proc], ignore_index=True)
     else: df_proc = df_all.copy()
+    
     if df_proc.empty: return pd.DataFrame()
     df_proc['STT'] = range(1, len(df_proc) + 1)
     df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
@@ -428,6 +436,7 @@ def render_thuchi_module(is_laptop):
     if 'edit_tc_id' not in st.session_state: st.session_state.edit_tc_id = None
 
     def render_input_tc():
+        # Only render input form for admin
         if st.session_state.role != 'admin': return
         
         d_d = get_vn_time(); d_t = "Chi"; d_a = None; d_desc = ""
@@ -472,11 +481,13 @@ def render_thuchi_module(is_laptop):
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # FIX: HEIGHT CONDITION
-        if is_laptop:
-            with st.container(height=600): _render_rows(df)
+        # CONDITIONAL LAYOUT FOR VIEWER/LAPTOP
+        use_container = is_laptop
+        if use_container:
+            with st.container(height=600):
+                _render_rows(df)
         else:
-            with st.container(): _render_rows(df)
+            _render_rows(df) # Render directly without fixed height container
 
     def _render_rows(df):
         for i, r in df.sort_values(by='Ngay', ascending=False).head(100).iterrows():
@@ -488,7 +499,6 @@ def render_thuchi_module(is_laptop):
             with c4:
                 if st.session_state.role == 'admin':
                     b1, b2 = st.columns(2)
-                    # FIX: STABLE KEYS
                     if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): 
                         st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
                     if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): 
@@ -506,7 +516,9 @@ def render_thuchi_module(is_laptop):
                 st.download_button("DOWNLOAD FILE", excel_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Không có dữ liệu")
 
-    if is_laptop:
+    # LAYOUT LOGIC
+    if is_laptop and st.session_state.role == 'admin':
+        # Admin Laptop: Split Columns
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_tc()
         with c2:
@@ -518,19 +530,30 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
-        mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
-        with mt[0]: render_input_tc()
-        with mt[1]: render_list_tc()
-        with mt[2]:
-            d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1_rp")
-            d2 = st.date_input("Đến", get_vn_time(), key="m_d2_rp")
-            st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
-        with mt[3]: render_export_tc()
+        # Viewer or Mobile: Stacked Layout (Full Width)
+        if st.session_state.role == 'admin':
+            mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
+            with mt[0]: render_input_tc()
+            with mt[1]: render_list_tc()
+            with mt[2]:
+                d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1_rp")
+                d2 = st.date_input("Đến", get_vn_time(), key="m_d2_rp")
+                st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
+            with mt[3]: render_export_tc()
+        else:
+            # Viewer: Only View Tabs
+            mt = st.tabs(["LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
+            with mt[0]: render_list_tc()
+            with mt[1]:
+                d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="v_d1_rp")
+                d2 = st.date_input("Đến", get_vn_time(), key="v_d2_rp")
+                st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
+            with mt[2]: render_export_tc()
 
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # FIX: SHARED PROJECT LIST FOR ALL USERS
+    # SHARED PROJECT LIST FOR ALL USERS
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
@@ -616,10 +639,9 @@ def render_vattu_module(is_laptop):
                             st.success("OK"); time.sleep(0.5); st.rerun()
 
     def render_list_vt():
-        # SYNC VIEW
         vp = st.session_state.curr_proj_name
         
-        # Viewer Dropdown
+        # Viewer Logic: Provide dropdown if not set
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -646,11 +668,13 @@ def render_vattu_module(is_laptop):
                                 st.session_state.edit_vt_id = None; st.rerun()
                             if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
-            # FIX SCROLL
-            if is_laptop:
-                with st.container(height=600): _render_vt_rows(dv)
+            # LIST RENDER LOGIC
+            use_container = is_laptop
+            if use_container:
+                with st.container(height=600):
+                    _render_vt_rows(dv)
             else:
-                with st.container(): _render_vt_rows(dv)
+                _render_vt_rows(dv)
             
             st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
 
@@ -687,7 +711,9 @@ def render_vattu_module(is_laptop):
                 excel_data = export_project_materials_excel(data_to_export, p_code, p_name)
                 st.download_button("DOWNLOAD FILE", excel_data, fname)
 
-    if is_laptop:
+    # LAYOUT LOGIC
+    if is_laptop and st.session_state.role == 'admin':
+        # Admin Laptop: Split View
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_vt()
         with c2:
@@ -696,11 +722,19 @@ def render_vattu_module(is_laptop):
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
-        mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
-        with mt[0]: render_input_vt()
-        with mt[1]: render_list_vt()
-        with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
-        with mt[3]: render_export_vt()
+        # Viewer or Mobile: Full View
+        if st.session_state.role == 'admin':
+            mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
+            with mt[0]: render_input_vt()
+            with mt[1]: render_list_vt()
+            with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
+            with mt[3]: render_export_vt()
+        else:
+            # Viewer: Only View Tabs
+            mt = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
+            with mt[0]: render_list_vt()
+            with mt[1]: st.dataframe(load_materials_master(), use_container_width=True)
+            with mt[2]: render_export_vt()
 
 # ==================== 8. APP RUN ====================
 if check_password():
