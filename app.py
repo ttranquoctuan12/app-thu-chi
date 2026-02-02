@@ -9,76 +9,43 @@ import time
 from io import BytesIO
 import unicodedata
 import pytz
+import random
+import string
 
 # --- 1. CẤU HÌNH TRANG ---
-st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
+st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="🏗️", layout="wide")
 
 # --- 2. CSS TỐI ƯU ---
 st.markdown("""
 <style>
-    /* 1. Cấu hình lề trang */
-    .block-container { 
-        padding-top: 1rem !important; 
-        padding-bottom: 3rem !important; 
-        padding-left: 0.5rem !important; 
-        padding-right: 0.5rem !important; 
-    }
-
-    /* 2. ẨN CÁC ICON THỪA */
-    [data-testid="stDecoration"] { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; visibility: hidden !important; }
-    [data-testid="stHeaderActionElements"] { display: none !important; }
-    .stAppDeployButton { display: none !important; }
-    [data-testid="stStatusWidget"] { display: none !important; }
-    footer { display: none !important; }
-    #MainMenu { display: none !important; }
-
-    /* 3. HEADER TRONG SUỐT & NÚT SIDEBAR */
-    header[data-testid="stHeader"] {
-        background-color: transparent !important;
-        z-index: 999;
-    }
-    [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        color: #000000 !important;
-        background-color: rgba(255, 255, 255, 0.5);
-        border-radius: 5px;
-    }
-
-    /* 4. GIAO DIỆN APP */
-    [data-testid="stCameraInput"] { width: 100% !important; }
-    [data-testid="stCameraInput"] video { width: 100% !important; border-radius: 12px; border: 2px solid #eee; }
+    .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
     
+    /* ẨN THÀNH PHẦN THỪA */
+    [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], 
+    .stAppDeployButton, [data-testid="stStatusWidget"], footer, #MainMenu { display: none !important; }
+
+    /* HEADER & SIDEBAR */
+    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important; visibility: visible !important;
+        color: #000000 !important; background-color: rgba(255, 255, 255, 0.5); border-radius: 5px;
+    }
+
+    /* GIAO DIỆN CHUNG */
+    [data-testid="stCameraInput"] { width: 100% !important; }
     .balance-box { 
-        padding: 15px; 
-        border-radius: 12px; 
-        background-color: #f8f9fa; 
-        border: 1px solid #e0e0e0; 
-        margin-bottom: 5px; 
-        text-align: center;
-        position: relative;
+        padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; margin-bottom: 5px; text-align: center; position: relative;
     }
     .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; }
     
-    .history-row { padding: 8px 0; border-bottom: 1px solid #eee; }
-    .desc-text { font-weight: 600; font-size: 1rem; color: #333; margin-bottom: 2px; }
-    .date-text { font-size: 0.8rem; color: #888; }
-    .amt-text { font-weight: bold; font-size: 1rem; }
-    
     .stTextInput input, .stNumberInput input { font-weight: bold; }
-    button[kind="secondary"] { padding: 0.25rem 0.5rem; border: 1px solid #eee; }
     
-    /* Footer phiên bản */
-    .app-footer {
-        text-align: center;
-        margin-top: 50px;
-        padding-top: 20px;
-        border-top: 1px dashed #eee;
-        color: #999;
-        font-size: 0.8rem;
-        font-style: italic;
-    }
+    /* STYLE BẢNG VẬT TƯ */
+    .total-row { background-color: #fff3cd; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
+    .info-tag { font-size: 0.8rem; color: #1565C0; font-style: italic; margin-bottom: 5px; }
+    
+    /* FOOTER */
+    .app-footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px dashed #eee; color: #999; font-size: 0.8rem; font-style: italic; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,11 +60,9 @@ def get_creds():
 def get_gs_client():
     return gspread.authorize(get_creds())
 
-# --- CẤU HÌNH MÚI GIỜ VN ---
-def get_vn_time():
-    return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
-
 # --- TIỆN ÍCH ---
+def get_vn_time(): return datetime.now(pytz.timezone('Asia/Ho_Chi_Minh'))
+
 def remove_accents(input_str):
     if not isinstance(input_str, str): return str(input_str)
     s = unicodedata.normalize('NFD', input_str)
@@ -114,106 +79,26 @@ def format_vnd(amount):
     if pd.isna(amount): return "0"
     return "{:,.0f}".format(amount).replace(",", ".")
 
-# --- XỬ LÝ SỐ LIỆU ---
-def process_report_data(df, start_date=None, end_date=None):
-    if df.empty: return pd.DataFrame()
-    df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
-    df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
-    df_all['ConLai'] = df_all['SignedAmount'].cumsum()
+def generate_project_code(name):
+    if not name: return ""
+    clean = remove_accents(name).upper()
+    initials = "".join([w[0] for w in clean.split() if w.isalnum()])
+    date = get_vn_time().strftime('%d%m%y')
+    return f"{initials}{date}"
 
-    if start_date and end_date:
-        mask_before = df_all['Ngay'].dt.date < start_date
-        df_before = df_all[mask_before]
-        opening_balance = df_before.iloc[-1]['ConLai'] if not df_before.empty else 0
-        
-        mask_in = (df_all['Ngay'].dt.date >= start_date) & (df_all['Ngay'].dt.date <= end_date)
-        df_proc = df_all[mask_in].copy()
-        
-        row_open = {'Row_Index': 0, 'Ngay': pd.Timestamp(start_date), 'Loai': 'Open', 'SoTien': 0, 'MoTa': f"Số dư đầu kỳ", 'HinhAnh': '', 'ConLai': opening_balance, 'SignedAmount': 0}
-        df_open = pd.DataFrame([row_open])
-        df_proc = pd.concat([df_open, df_proc], ignore_index=True)
-    else:
-        df_proc = df_all.copy()
+def generate_material_code(name):
+    clean = remove_accents(name).upper()
+    initials = "".join([w[0] for w in clean.split() if w.isalnum()])[:3]
+    suffix = ''.join(random.choices(string.digits, k=3))
+    return f"VT{initials}{suffix}"
 
-    if df_proc.empty: return pd.DataFrame()
-
-    df_proc['STT'] = range(1, len(df_proc) + 1)
-    df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
-    def get_date_str(row): return "" if row['Loai'] == 'Open' or pd.isna(row['Ngay']) else row['Ngay'].strftime('%d/%m/%Y')
-    df_proc['NgayChi'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Chi' else "", axis=1)
-    df_proc['NgayNhan'] = df_proc.apply(lambda x: get_date_str(x) if x['Loai'] == 'Thu' else "", axis=1)
-    df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
-
-    return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
-
-# --- EXCEL CUSTOM ---
-def convert_df_to_excel_custom(df_report, start_date, end_date):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        workbook = writer.book
-        fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
-        fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
-        fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
-        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'})
-        
-        fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        fmt_thu_bg = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_thu_money = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
-        fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_orange = workbook.add_format({'border': 1, 'num_format': '#,##0', 'bg_color': '#FF9900', 'bold': True, 'font_size': 11, 'valign': 'vcenter'}) 
-        fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter'})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
-
-        worksheet = workbook.add_worksheet("SoQuy")
-        worksheet.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
-        date_str = f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}"
-        worksheet.merge_range('A2:F2', date_str, fmt_subtitle)
-        current_time_str = get_vn_time().strftime("%H:%M %d/%m/%Y")
-        worksheet.merge_range('A3:F3', f"Hệ thống Quyết toán - Xuất lúc: {current_time_str}", fmt_info)
-        worksheet.merge_range('A4:F4', "Người tạo: TUẤN VDS.HCM", fmt_info)
-        
-        headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
-        for c, h in enumerate(headers): worksheet.write(4, c, h, fmt_header)
-        worksheet.set_column('B:B', 40); worksheet.set_column('C:D', 15); worksheet.set_column('E:F', 18)
-
-        start_row_idx = 5
-        for i, row in df_report.iterrows():
-            r = start_row_idx + i
-            loai = row['Loai']; bal = row['ConLai']
-            if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
-            elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
-            else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
-            worksheet.write(r, 0, row['STT'], c_fmt); worksheet.write(r, 1, row['Khoan'], c_fmt)
-            worksheet.write(r, 2, row['NgayChi'], c_fmt); worksheet.write(r, 3, row['NgayNhan'], c_fmt)
-            if loai == 'Open': worksheet.write(r, 4, "", m_fmt)
-            else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
-            worksheet.write(r, 5, bal, bal_fmt)
-            
-        l_row = start_row_idx + len(df_report)
-        fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
-        worksheet.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot); worksheet.write(l_row, 5, fin_bal, fmt_tot_v)
-        worksheet.set_row(0, 40); worksheet.set_row(1, 25); worksheet.set_row(4, 30)
-    return output.getvalue()
-
-# --- DRIVE & CRUD ---
-def upload_image_to_drive(image_file, file_name):
-    try:
-        creds = get_creds()
-        service = build('drive', 'v3', credentials=creds)
-        folder_id = st.secrets["DRIVE_FOLDER_ID"]
-        media = MediaIoBaseUpload(image_file, mimetype='image/jpeg')
-        file = service.files().create(body={'name': file_name, 'parents': [folder_id]}, media_body=media, fields='webViewLink').execute()
-        return file.get('webViewLink')
-    except: return ""
+# --- CACHE DATA ---
+def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=300)
 def load_data_with_index():
     try:
-        client = get_gs_client()
-        sheet = client.open("QuanLyThuChi").worksheet("data")
+        client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
         data = sheet.get_all_records()
         if not data: return pd.DataFrame()
         df = pd.DataFrame(data)
@@ -223,8 +108,30 @@ def load_data_with_index():
         return df
     except: return pd.DataFrame()
 
-def clear_data_cache(): st.cache_data.clear()
+# LOAD DANH MỤC VẬT TƯ (CẤU TRÚC MỚI)
+@st.cache_data(ttl=300)
+def load_materials_master():
+    try:
+        client = get_gs_client()
+        sheet = client.open("QuanLyThuChi").worksheet("dm_vattu")
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
+    except: return pd.DataFrame(columns=["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
 
+@st.cache_data(ttl=300)
+def load_project_data():
+    try:
+        client = get_gs_client()
+        sheet = client.open("QuanLyThuChi").worksheet("data_duan")
+        data = sheet.get_all_records()
+        if not data: return pd.DataFrame(columns=["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu"])
+        df = pd.DataFrame(data)
+        for col in ['SoLuong', 'DonGia', 'ThanhTien']:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        return df
+    except: return pd.DataFrame()
+
+# --- HÀM GHI DỮ LIỆU ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
@@ -239,200 +146,301 @@ def delete_transaction(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== VIEW MODULES (CẬP NHẬT TỰ ĐỘNG ĐIỀN) ====================
-
-def render_input_form():
-    with st.container(border=True):
-        st.subheader("➕ Nhập Giao Dịch")
+# --- HÀM GHI VẬT TƯ (CẬP NHẬT ĐA ĐƠN VỊ) ---
+def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, price_unit1, selected_unit, qty, note):
+    client = get_gs_client(); wb = client.open("QuanLyThuChi")
+    
+    # 1. Lưu Master Data
+    try: ws_master = wb.worksheet("dm_vattu")
+    except:
+        ws_master = wb.add_worksheet("dm_vattu", 1000, 6)
+        ws_master.append_row(["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
+    
+    df_master = pd.DataFrame(ws_master.get_all_records())
+    mat_code = ""
+    # Check tồn tại
+    check_name = remove_accents(mat_name).lower().strip()
+    exists = False
+    
+    if not df_master.empty:
+        for idx, row in df_master.iterrows():
+            if remove_accents(str(row['TenVT'])).lower().strip() == check_name:
+                mat_code = row['MaVT']; exists = True; break
+    
+    if not exists:
+        mat_code = generate_material_code(mat_name)
+        # Lưu thông tin gốc (Giá theo Cấp 1)
+        ws_master.append_row([mat_code, auto_capitalize(mat_name), unit1, unit2, ratio, price_unit1])
+    
+    # 2. Tính toán giá thực tế cho Dự án
+    final_price = 0
+    if selected_unit == unit1: # Chọn cấp 1 (Cuộn)
+        final_price = price_unit1
+    else: # Chọn cấp 2 (Mét)
+        if ratio > 0: final_price = price_unit1 / ratio
+        else: final_price = 0
         
-        # --- HÀM TỰ ĐỘNG ĐIỀN (CALLBACK) ---
-        def auto_fill_callback():
-            # Lấy nội dung từ ô nhập liệu (chuyển về chữ thường để so sánh)
-            content = st.session_state.desc_new.lower()
+    thanh_tien = qty * final_price
+    
+    # 3. Lưu Data Dự án
+    try: ws_data = wb.worksheet("data_duan")
+    except:
+        ws_data = wb.add_worksheet("data_duan", 1000, 10)
+        ws_data.append_row(["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu"])
+        
+    ws_data.append_row([
+        proj_code, auto_capitalize(proj_name), get_vn_time().strftime('%Y-%m-%d %H:%M:%S'),
+        mat_code, auto_capitalize(mat_name), selected_unit, # Lưu đơn vị đã chọn
+        qty, final_price, thanh_tien, note
+    ])
+    clear_data_cache()
+
+# --- EXCEL ---
+def export_project_materials_excel(df_proj, proj_code, proj_name):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook = writer.book
+        # Styles
+        fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_subtitle = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
+        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#E0E0E0', 'text_wrap': True, 'valign': 'vcenter'})
+        fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter'})
+        fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0'})
+        fmt_dec = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0.00'})
+        fmt_total = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'num_format': '#,##0'})
+
+        ws = workbook.add_worksheet("BangKeVatTu")
+        ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
+        ws.merge_range('A2:G2', f"Dự án: {proj_name} (Mã: {proj_code})", fmt_subtitle)
+        ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
+        ws.merge_range('A4:G4', "Người tạo: TUẤN VDS.HCM", fmt_info)
+        
+        cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "Số lượng", "Đơn giá", "Thành tiền"]
+        for i, h in enumerate(cols): ws.write(4, i, h, fmt_header)
+        
+        ws.set_column('A:A', 5); ws.set_column('B:B', 12); ws.set_column('C:C', 35); ws.set_column('D:D', 8); ws.set_column('E:G', 15)
+        
+        row_idx = 5; total_money = 0
+        for i, row in df_proj.iterrows():
+            ws.write(row_idx, 0, i+1, fmt_cell)
+            ws.write(row_idx, 1, row['MaVT'], fmt_cell)
+            ws.write(row_idx, 2, row['TenVT'], fmt_cell)
+            ws.write(row_idx, 3, row['DVT'], fmt_cell)
+            ws.write(row_idx, 4, row['SoLuong'], fmt_dec) # Số lượng có thể lẻ
+            ws.write(row_idx, 5, row['DonGia'], fmt_num)
+            ws.write(row_idx, 6, row['ThanhTien'], fmt_num)
+            total_money += row['ThanhTien']; row_idx += 1
             
-            # Logic: Nếu có chữ "công tác phí"
-            if "công tác phí" in content:
-                st.session_state.a_new = 150000  # Tự điền 150.000
-                st.session_state.t_new = "Chi"   # Tự chuyển sang loại "Chi"
-                st.toast("💡 Đã tự động điền 150k công tác phí!")
+        ws.merge_range(row_idx, 0, row_idx, 5, "TỔNG CỘNG TIỀN", fmt_total)
+        ws.write(row_idx, 6, total_money, fmt_total)
+        ws.set_row(0, 40); ws.set_row(1, 25); ws.set_row(4, 30)
+    return output.getvalue()
 
-        # Khởi tạo session state nếu chưa có
-        if 'new_amount' not in st.session_state: st.session_state.new_amount = 0
-        if 'new_desc' not in st.session_state: st.session_state.new_desc = ""
+# --- MODULE CŨ ---
+def process_report_data(df, start_date=None, end_date=None):
+    if df.empty: return pd.DataFrame()
+    df_all = df.sort_values(by=['Ngay', 'Row_Index'], ascending=[True, True]).copy()
+    df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
+    df_all['ConLai'] = df_all['SignedAmount'].cumsum()
+    if start_date and end_date:
+        mask_before = df_all['Ngay'].dt.date < start_date
+        opening_balance = df_all[mask_before].iloc[-1]['ConLai'] if not df_all[mask_before].empty else 0
+        mask_in = (df_all['Ngay'].dt.date >= start_date) & (df_all['Ngay'].dt.date <= end_date)
+        df_proc = df_all[mask_in].copy()
+        df_proc = pd.concat([pd.DataFrame([{'Row_Index': 0, 'Ngay': pd.Timestamp(start_date), 'Loai': 'Open', 'SoTien': 0, 'MoTa': f"Số dư đầu kỳ", 'HinhAnh': '', 'ConLai': opening_balance, 'SignedAmount': 0}]), df_proc], ignore_index=True)
+    else: df_proc = df_all.copy()
+    if df_proc.empty: return pd.DataFrame()
+    df_proc['STT'] = range(1, len(df_proc) + 1)
+    df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
+    df_proc['NgayChi'] = df_proc.apply(lambda x: x['Ngay'].strftime('%d/%m/%Y') if x['Loai'] == 'Chi' and not pd.isna(x['Ngay']) else "", axis=1)
+    df_proc['NgayNhan'] = df_proc.apply(lambda x: x['Ngay'].strftime('%d/%m/%Y') if x['Loai'] == 'Thu' and not pd.isna(x['Ngay']) else "", axis=1)
+    df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
+    return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-        c1, c2 = st.columns([1.5, 1])
-        # Ngày tháng (Giờ VN)
-        d_date = c1.date_input("Ngày", get_vn_time(), key="d_new", label_visibility="collapsed")
+def convert_df_to_excel_custom(df_report, start_date, end_date):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook = writer.book
+        fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
+        fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
+        fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
+        fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFFFF', 'font_size': 11, 'text_wrap': True, 'valign': 'vcenter'})
+        fmt_money = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
+        fmt_thu = workbook.add_format({'border': 1, 'bg_color': '#FFFF00', 'bold': True, 'num_format': '#,##0', 'valign': 'vcenter'})
+        fmt_open = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'num_format': '#,##0', 'valign': 'vcenter'})
+        fmt_norm = workbook.add_format({'border': 1, 'num_format': '#,##0', 'valign': 'vcenter'})
+        fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'valign': 'vcenter'})
+        fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter'})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
+
+        ws = workbook.add_worksheet("SoQuy")
+        ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
+        ws.merge_range('A2:F2', f"Từ ngày {start_date.strftime('%d/%m/%Y')} đến ngày {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
+        ws.merge_range('A3:F3', f"Hệ thống Quyết toán - Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
+        ws.merge_range('A4:F4', "Người tạo: TUẤN VDS.HCM", fmt_info)
+        headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
+        for c, h in enumerate(headers): ws.write(4, c, h, fmt_header)
+        ws.set_column('B:B', 40); ws.set_column('C:D', 15); ws.set_column('E:F', 18)
         
-        # Loại (Chi/Thu) - Thêm key="t_new" để code có thể tự động thay đổi
-        d_type = c2.selectbox("Loại", ["Chi", "Thu"], key="t_new", label_visibility="collapsed")
+        start_row = 5
+        for i, row in df_report.iterrows():
+            r = start_row + i; loai = row['Loai']
+            if loai == 'Thu': c_fmt = fmt_thu
+            elif loai == 'Open': c_fmt = fmt_open
+            else: c_fmt = fmt_norm
+            bal_fmt = fmt_red if row['ConLai'] < 0 else fmt_money
+            ws.write(r, 0, row['STT'], c_fmt); ws.write(r, 1, row['Khoan'], c_fmt)
+            ws.write(r, 2, row['NgayChi'], c_fmt); ws.write(r, 3, row['NgayNhan'], c_fmt)
+            ws.write(r, 4, row['SoTienShow'] if loai != 'Open' else "", c_fmt)
+            ws.write(r, 5, row['ConLai'], bal_fmt)
+        l_row = start_row + len(df_report)
+        ws.merge_range(l_row, 0, l_row, 4, "TỔNG", fmt_tot)
+        ws.write(l_row, 5, df_report['ConLai'].iloc[-1] if not df_report.empty else 0, fmt_tot_v)
+        ws.set_row(0, 40); ws.set_row(1, 25); ws.set_row(4, 30)
+    return output.getvalue()
+
+def upload_image_to_drive(image_file, file_name):
+    try:
+        creds = get_creds(); service = build('drive', 'v3', credentials=creds); folder_id = st.secrets["DRIVE_FOLDER_ID"]
+        media = MediaIoBaseUpload(image_file, mimetype='image/jpeg')
+        file = service.files().create(body={'name': file_name, 'parents': [folder_id]}, media_body=media, fields='webViewLink').execute()
+        return file.get('webViewLink')
+    except: return ""
+
+# ==================== MODULE QUẢN LÝ VẬT TƯ (CẬP NHẬT) ====================
+def render_vattu_module():
+    st.subheader("🏗️ Quản Lý Vật Tư Dự Án")
+    
+    with st.container(border=True):
+        st.markdown("**1. Thông tin Dự án**")
+        if 'proj_name' not in st.session_state: st.session_state.proj_name = ""
+        proj_name_input = st.text_input("Tên Dự án:", value=st.session_state.proj_name, placeholder="VD: Lắp đặt Camera A.Tuấn")
         
-        st.write("📝 **Nội dung:**")
-        # THÊM on_change=auto_fill_callback VÀO ĐÂY
-        d_desc = st.text_input(
-            "Mô tả", 
-            value=st.session_state.new_desc, 
-            key="desc_new", 
-            placeholder="VD: Ăn sáng, Công tác phí...", 
-            label_visibility="collapsed",
-            on_change=auto_fill_callback  # <--- KÍCH HOẠT TỰ ĐỘNG ĐIỀN
-        )
-        
-        st.write("💰 **Số tiền:**")
-        # Thêm key="a_new" để code có thể tự động điền tiền vào đây
-        d_amount = st.number_input(
-            "Số tiền", 
-            min_value=0, 
-            step=5000, 
-            value=st.session_state.new_amount, 
-            key="a_new", 
-            label_visibility="collapsed"
-        )
-        
-        st.markdown("<br><b>📷 Hình ảnh</b>", unsafe_allow_html=True)
-        cam_mode = st.toggle("Dùng Camera", value=False)
-        img_data = st.camera_input("Chụp ảnh", key="cam_new", label_visibility="collapsed") if cam_mode else st.file_uploader("Tải ảnh", type=['jpg','png','jpeg'], key="up_new")
+        if proj_name_input:
+            st.session_state.proj_name = proj_name_input
+            proj_code = generate_project_code(proj_name_input)
+            st.info(f"🔑 Mã dự án: **{proj_code}**")
+            
+            # --- PHẦN NHẬP LIỆU THÔNG MINH ---
+            st.divider()
+            st.markdown("**2. Nhập vật tư sử dụng**")
+            
+            df_master = load_materials_master()
+            master_names = df_master['TenVT'].unique().tolist() if not df_master.empty else []
+            
+            # Chọn vật tư
+            c_name, c_empty = st.columns([3, 1])
+            vt_name = c_name.selectbox("Tên vật tư:", options=[""] + master_names, index=0)
+            if vt_name == "":
+                vt_name = c_name.text_input("Hoặc nhập tên vật tư mới:", placeholder="VD: Dây điện Cadivi 2.5")
+            
+            # Tự động điền thông tin nếu đã có
+            u1, u2, ratio, price1 = "", "", 1.0, 0.0
+            if not df_master.empty and vt_name in master_names:
+                row_data = df_master[df_master['TenVT'] == vt_name].iloc[0]
+                u1 = row_data['DVT_Cap1']; u2 = row_data['DVT_Cap2']
+                ratio = float(row_data['QuyDoi']); price1 = float(row_data['DonGia_Cap1'])
+                st.caption(f"ℹ️ Thông tin lưu: 1 {u1} = {ratio} {u2}. Giá gốc: {format_vnd(price1)}/{u1}")
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("LƯU GIAO DỊCH", type="primary", use_container_width=True):
-            if d_amount > 0 and d_desc.strip() != "":
-                with st.spinner("Đang lưu..."):
-                    link = ""
-                    if img_data:
-                        fname = f"{d_date.strftime('%Y%m%d')}_{remove_accents(d_desc)}.jpg"
-                        link = upload_image_to_drive(img_data, fname)
-                    add_transaction(d_date, d_type, d_amount, d_desc, link)
-                st.success("Đã lưu!")
-                # Reset form
-                st.session_state.new_amount = 0
-                st.session_state.new_desc = ""
-                # Reset các widget inputs bằng cách clear session keys cụ thể
-                st.session_state.a_new = 0
-                st.session_state.desc_new = ""
-                time.sleep(0.5)
-                st.rerun()
-            else: st.warning("Thiếu thông tin!")
+            # Nhập chi tiết đơn vị
+            c1, c2, c3 = st.columns(3)
+            vt_unit1 = c1.text_input("ĐVT Cấp 1 (Lớn):", value=u1, placeholder="VD: Cuộn, Thùng")
+            vt_unit2 = c2.text_input("ĐVT Cấp 2 (Nhỏ):", value=u2, placeholder="VD: Mét, Cái")
+            vt_ratio = c3.number_input("Quy đổi (1 Lớn = ? Nhỏ):", min_value=1.0, value=ratio, step=1.0)
+            
+            vt_price1 = st.number_input(f"Đơn giá theo {vt_unit1 if vt_unit1 else 'Cấp 1'}:", min_value=0.0, step=1000.0, value=price1, format="%.0f")
+            
+            # CHỌN ĐƠN VỊ SỬ DỤNG
+            st.write("---")
+            st.write(f"🔽 **Bạn đang nhập theo đơn vị nào?**")
+            
+            unit_opts = []
+            if vt_unit1: unit_opts.append(f"{vt_unit1} (Cấp 1)")
+            if vt_unit2: unit_opts.append(f"{vt_unit2} (Cấp 2)")
+            
+            if not unit_opts: unit_opts = ["Mặc định"]
+            
+            sel_unit_label = st.radio("Chọn đơn vị tính:", unit_opts, horizontal=True)
+            
+            # Xử lý logic giá theo đơn vị chọn
+            sel_unit = ""
+            final_price_suggest = 0.0
+            
+            if vt_unit1 and vt_unit1 in sel_unit_label:
+                sel_unit = vt_unit1
+                final_price_suggest = vt_price1
+            elif vt_unit2 and vt_unit2 in sel_unit_label:
+                sel_unit = vt_unit2
+                if vt_ratio > 0: final_price_suggest = vt_price1 / vt_ratio
+            else:
+                sel_unit = vt_unit1
+                final_price_suggest = vt_price1
 
-def render_dashboard_box(bal, thu, chi):
-    text_color = "#2ecc71" if bal >= 0 else "#e74c3c"
-    # CHỮ KÝ NẰM GỌN GÀNG GÓC TRÁI DƯỚI BÊN NGOÀI
-    st.markdown(f"""
-<div class="balance-box">
-<div style="font-size: 1.2rem; font-weight: 900; color: #1565C0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">HỆ THỐNG CÂN ĐỐI QUYẾT TOÁN</div>
-<div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Số dư hiện tại</div>
-<div class="balance-text" style="color: {text_color};">{format_vnd(bal)}</div>
-<div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
-<div style="color: #27ae60; font-weight: bold;">⬇️ {format_vnd(thu)}</div>
-<div style="color: #c0392b; font-weight: bold;">⬆️ {format_vnd(chi)}</div>
-</div>
-</div>
-<div style="text-align: left; margin-top: 0px; margin-bottom: 10px; font-size: 0.75rem; color: #aaa; font-style: italic; font-weight: 600;">TUẤN VDS.HCM</div>
-""", unsafe_allow_html=True)
+            c_qty, c_total = st.columns(2)
+            vt_qty = c_qty.number_input(f"Số lượng ({sel_unit}):", min_value=0.0, step=0.1, format="%.2f")
+            c_total.metric(f"Thành tiền (Giá: {format_vnd(final_price_suggest)}/{sel_unit})", format_vnd(vt_qty * final_price_suggest))
+            
+            vt_note = st.text_input("Ghi chú:", placeholder="Dùng cho phòng khách...")
+            
+            if st.button("➕ Thêm vào Dự án", type="primary"):
+                if vt_name and vt_unit1 and vt_qty > 0:
+                    with st.spinner("Đang lưu..."):
+                        save_project_material(proj_code, proj_name_input, vt_name, vt_unit1, vt_unit2, vt_ratio, vt_price1, sel_unit, vt_qty, vt_note)
+                    st.success(f"Đã thêm: {vt_qty} {sel_unit} {vt_name}"); time.sleep(0.5); st.rerun()
+                else: st.warning("Thiếu thông tin (Tên, ĐVT, Số lượng)!")
 
-def render_report_table(df):
-    if df.empty: st.info("Chưa có dữ liệu."); return
-    today = get_vn_time(); d30 = today - timedelta(days=30)
-    col_d1, col_d2 = st.columns(2)
-    start_d = col_d1.date_input("Từ ngày", value=d30, key="v_start")
-    end_d = col_d2.date_input("Đến ngày", value=today, key="v_end")
-    df_report = process_report_data(df, start_d, end_d)
-    if not df_report.empty:
-        def highlight(row): 
-            if row['Loai'] == 'Thu': return ['background-color: #FFFF00; color: black; font-weight: bold'] * len(row)
-            if row['Loai'] == 'Open': return ['background-color: #E0E0E0; font-style: italic'] * len(row)
-            return [''] * len(row)
-        def color_red(val): return f'color: {"red" if isinstance(val, (int, float)) and val < 0 else "black"}'
-        st.dataframe(df_report.style.apply(highlight, axis=1).map(color_red, subset=['ConLai']).format({"SoTienShow": "{:,.0f}", "ConLai": "{:,.0f}"}), column_config={"STT": st.column_config.NumberColumn("STT", width="small"), "Khoan": st.column_config.TextColumn("Khoản", width="large"), "NgayChi": "Ngày chi", "NgayNhan": "Ngày Nhận", "SoTienShow": "Số tiền", "ConLai": "Còn lại", "Loai": None}, hide_index=True, use_container_width=True, height=500)
-        final_bal = df_report['ConLai'].iloc[-1]
-        st.markdown(f"<div style='background-color: #FFFF00; padding: 10px; text-align: right; font-weight: bold; font-size: 1.2rem; border: 1px solid #ddd;'>TỔNG SỐ DƯ CUỐI KỲ: <span style='color: {'red' if final_bal < 0 else 'black'}'>{format_vnd(final_bal)}</span></div>", unsafe_allow_html=True)
-    else: st.warning("Không có dữ liệu.")
+            # 3. DANH SÁCH & EXCEL
+            st.divider()
+            df_all_proj = load_project_data()
+            if not df_all_proj.empty:
+                df_curr = df_all_proj[df_all_proj['MaDuAn'] == proj_code].copy()
+                if not df_curr.empty:
+                    df_display = df_curr[['TenVT', 'DVT', 'SoLuong', 'DonGia', 'ThanhTien']].reset_index(drop=True)
+                    df_display.columns = ['Tên VT', 'ĐVT', 'SL', 'Đơn Giá', 'Thành Tiền']
+                    df_display.index += 1
+                    st.dataframe(df_display, use_container_width=True)
+                    
+                    t_q = df_curr['SoLuong'].sum(); t_m = df_curr['ThanhTien'].sum()
+                    st.markdown(f"<div class='total-row'>TỔNG TIỀN: {format_vnd(t_m)} VNĐ</div>", unsafe_allow_html=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    excel_data = export_project_materials_excel(df_curr, proj_code, proj_name_input)
+                    st.download_button("⬇️ Tải Bảng Kê Vật Tư", excel_data, f"VatTu_{proj_code}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
+                else: st.info("Chưa có vật tư.")
 
-def render_history_list(df):
-    if df.empty: st.info("Trống"); return
-    if 'edit_row_index' not in st.session_state: st.session_state.edit_row_index = None
-    if st.session_state.edit_row_index is not None:
-        row_to_edit = df[df['Row_Index'] == st.session_state.edit_row_index]
-        if not row_to_edit.empty:
-            row_data = row_to_edit.iloc[0]
-            with st.container(border=True):
-                st.info(f"✏️ Đang sửa: {row_data['MoTa']}")
-                ue1, ue2 = st.columns([1.5, 1])
-                ud_date = ue1.date_input("Ngày", value=row_data['Ngay'], key="u_d")
-                ud_type = ue2.selectbox("Loại", ["Chi", "Thu"], index=(0 if row_data['Loai'] == "Chi" else 1), key="u_t")
-                ud_amt = st.number_input("Tiền", value=int(row_data['SoTien']), step=1000, key="u_a")
-                ud_desc = st.text_input("Mô tả", value=row_data['MoTa'], key="u_desc")
-                b1, b2 = st.columns(2)
-                if b1.button("💾 LƯU", type="primary", use_container_width=True):
-                    update_transaction(st.session_state.edit_row_index, ud_date, ud_type, ud_amt, ud_desc, row_data['HinhAnh'])
-                    st.session_state.edit_row_index = None; st.rerun()
-                if b2.button("❌ HỦY", use_container_width=True): st.session_state.edit_row_index = None; st.rerun()
-    df_sorted = df.sort_values(by='Ngay', ascending=False)
-    h1, h2, h3 = st.columns([2, 1, 1]); h1.caption("Nội dung"); h2.caption("Số tiền"); h3.caption("Thao tác"); st.divider()
-    for index, row in df_sorted.head(50).iterrows():
-        c1, c2, c3 = st.columns([2, 1, 1], gap="small")
-        with c1:
-            icon = "🟢" if row['Loai'] == 'Thu' else "🔴"
-            st.markdown(f"<div class='desc-text'>{row['MoTa']}</div><div class='date-text'>{icon} {row['Ngay'].strftime('%d/%m/%Y')}</div>", unsafe_allow_html=True)
-            if row['HinhAnh']: st.markdown(f"<a href='{row['HinhAnh']}' target='_blank' style='font-size:0.8rem;'>Xem ảnh</a>", unsafe_allow_html=True)
-        with c2:
-            color = "#27ae60" if row['Loai'] == 'Thu' else "#c0392b"
-            st.markdown(f"<div class='amt-text' style='color:{color}'>{format_vnd(row['SoTien'])}</div>", unsafe_allow_html=True)
-        with c3:
-            bc1, bc2 = st.columns(2)
-            if bc1.button("✏️", key=f"e_{row['Row_Index']}", help="Sửa"): st.session_state.edit_row_index = row['Row_Index']; st.rerun()
-            if bc2.button("🗑️", key=f"d_{row['Row_Index']}", help="Xóa"): delete_transaction(row['Row_Index']); st.toast("Đã xóa"); time.sleep(0.5); st.rerun()
-        st.markdown("<div style='border-bottom: 1px solid #f0f0f0; margin: 5px 0;'></div>", unsafe_allow_html=True)
-    if len(df) > 50: st.caption("... và còn nhiều giao dịch cũ hơn")
-
-def render_export(df):
-    st.write("📥 **Xuất Excel Sổ Quỹ**")
-    if not df.empty:
-        c1, c2 = st.columns(2)
-        d1 = c1.date_input("Từ", datetime.now().replace(day=1), key="ed1"); d2 = c2.date_input("Đến", datetime.now(), key="ed2")
-        if st.button("Tải File", type="primary", use_container_width=True):
-            with st.spinner("Đang tạo file..."):
-                df_r = process_report_data(df, d1, d2)
-                data = convert_df_to_excel_custom(df_r, d1, d2)
-            st.download_button("⬇️ TẢI NGAY", data, f"SoQuy_{d1.strftime('%d%m')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary", use_container_width=True)
-    else: st.info("Trống")
-
-# ==================== MAIN ====================
-df = load_data_with_index()
-total_thu = 0; total_chi = 0; balance = 0
-if not df.empty:
-    total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum()
-    total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum()
+# ==================== MAIN APP ====================
+def render_thuchi_module(layout_mode):
+    df = load_data_with_index()
+    total_thu = df[df['Loai'] == 'Thu']['SoTien'].sum() if not df.empty else 0
+    total_chi = df[df['Loai'] == 'Chi']['SoTien'].sum() if not df.empty else 0
     balance = total_thu - total_chi
+    render_dashboard_box(balance, total_thu, total_chi)
+    if "Laptop" in layout_mode:
+        c1, c2 = st.columns([1, 1.8], gap="medium")
+        with c1: render_input_form()
+        with c2:
+            t1, t2, t3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
+            with t1: render_report_table(df)
+            with t2: render_history_list(df)
+            with t3: render_export(df)
+    else:
+        t1, t2, t3, t4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
+        with t1: render_input_form()
+        with t2: render_history_list(df)
+        with t3: render_report_table(df)
+        with t4: render_export(df)
 
-# SIDEBAR (GIỮ NGUYÊN NÚT LÀM MỚI, NHƯNG DI CHUYỂN TOGGLE)
 with st.sidebar:
     st.title("⚙️ Cài đặt")
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
-render_dashboard_box(balance, total_thu, total_chi)
-
-# CÔNG TẮC GẠT CHẾ ĐỘ XEM (NẰM DƯỚI BOX, BÊN PHẢI)
 _, col_toggle = st.columns([2, 1.5])
-with col_toggle:
-    is_laptop = st.toggle("💻 Chế độ Laptop", value=False)
-
+with col_toggle: is_laptop = st.toggle("💻 Chế độ Laptop", value=False)
 layout_mode = "💻 Laptop" if is_laptop else "📱 Điện thoại"
 
-if is_laptop:
-    col_left, col_right = st.columns([1, 1.8], gap="medium")
-    with col_left: render_input_form()
-    with col_right:
-        pc_tab1, pc_tab2, pc_tab3 = st.tabs(["👁️ Sổ Quỹ", "📝 Lịch Sử", "📥 Xuất File"])
-        with pc_tab1: render_report_table(df)
-        with pc_tab2: render_history_list(df)
-        with pc_tab3: render_export(df)
-else:
-    m_tab1, m_tab2, m_tab3, m_tab4 = st.tabs(["➕ NHẬP", "📝 LỊCH SỬ", "👁️ SỔ QUỸ", "📥 XUẤT"])
-    with m_tab1: render_input_form()
-    with m_tab2: render_history_list(df)
-    with m_tab3: render_report_table(df)
-    with m_tab4: render_export(df)
+main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
+with main_tabs[0]: render_thuchi_module(layout_mode)
+with main_tabs[1]: render_vattu_module()
 
-# FOOTER CUỐI TRANG
-st.markdown("<div class='app-footer'>Phiên bản: 3.0 UX Ultimate - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
-
+st.markdown("<div class='app-footer'>Phiên bản: 4.1 Multi-Unit - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
