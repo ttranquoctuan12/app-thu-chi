@@ -15,7 +15,7 @@ import difflib
 import uuid
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (ADAPTIVE - TỐI ƯU HIỂN THỊ)
+# 1. CẤU HÌNH & CSS (ADAPTIVE - TỰ ĐỘNG THEO HỆ THỐNG)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -33,7 +33,7 @@ st.markdown("""
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, #MainMenu, [data-testid="stStatusWidget"] { display: none !important; }
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
 
-    /* 2. GIAO DIỆN THÍCH ỨNG */
+    /* 2. GIAO DIỆN THÍCH ỨNG (DARK/LIGHT MODE AUTO) */
     .balance-box {
         background-color: var(--secondary-background-color);
         padding: 15px; border-radius: 10px;
@@ -49,13 +49,17 @@ st.markdown("""
     }
 
     /* 3. BUTTONS */
+    /* Nút chính (Lưu/Thêm) */
     [data-testid="stFormSubmitButton"] > button {
         width: 100%; background-color: #ff4b4b; color: white;
         font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px;
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút icon nhỏ trong bảng */
+    /* Nút Logout trên Top Bar */
+    .logout-btn { border: 1px solid #ef4444; color: #ef4444; font-weight: bold; }
+    
+    /* Nút icon nhỏ (Sửa/Xóa) */
     div[data-testid="column"] button {
         padding: 2px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -63,7 +67,7 @@ st.markdown("""
     }
     div[data-testid="column"] button:hover { border-color: #ff4b4b; color: #ff4b4b; }
 
-    /* 4. TABLE STYLE */
+    /* 4. TABLE STYLE (EXCEL-LIKE) */
     .excel-header {
         background-color: var(--secondary-background-color); padding: 10px 5px;
         font-weight: 800; font-size: 0.85rem; text-transform: uppercase;
@@ -86,7 +90,7 @@ st.markdown("""
         font-weight: 800; padding: 12px; border-radius: 6px; text-align: right; margin-top: 15px; font-size: 1.1rem;
     }
 
-    /* Footer */
+    /* Footer Gọn Gàng */
     .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
     
     .login-container { display: flex; justify-content: center; margin-top: 80px; }
@@ -120,9 +124,6 @@ def auto_capitalize(text):
     return text
 
 def format_vnd(amount):
-    """
-    Format số: 1.000.000 (Chẵn) hoặc 1.000,5 (Lẻ)
-    """
     if pd.isna(amount): return "0"
     try:
         val = float(amount)
@@ -183,7 +184,7 @@ def load_data_with_index():
         if df.empty: return pd.DataFrame()
         df['Row_Index'] = range(2, len(df) + 2)
         df['Ngay'] = pd.to_datetime(df['Ngay'], errors='coerce')
-        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
+        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float') # Dùng float để giữ số lẻ nếu có
         return df
     except: return pd.DataFrame()
 
@@ -265,7 +266,7 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT ====================
+# ==================== 4. EXCEL EXPORT (UNIVERSAL) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -428,7 +429,7 @@ def render_thuchi_module(is_laptop):
         if st.session_state.role != 'admin': return
         if 'edit_tc_id' not in st.session_state: st.session_state.edit_tc_id = None
         
-        d_d = get_vn_time(); d_t = "Chi"; d_a = 0.0; d_desc = ""
+        d_d = get_vn_time(); d_t = "Chi"; d_a = None; d_desc = ""
         is_edit = st.session_state.edit_tc_id is not None
         
         if is_edit and not df.empty:
@@ -442,7 +443,11 @@ def render_thuchi_module(is_laptop):
             c1, c2 = st.columns([1, 1])
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
-            d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=d_a)
+            
+            # SMART INPUT: Không set value=0.0 để tránh phải xóa
+            val_disp = d_a if is_edit else None
+            d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=val_disp, placeholder="0")
+            
             d_desc = st.text_input("Mô tả", value=d_desc)
             img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
 
@@ -450,23 +455,25 @@ def render_thuchi_module(is_laptop):
             submitted = st.form_submit_button(btn_txt)
             
             if submitted:
-                if d_amt > 0 and d_desc:
+                amt_val = d_amt if d_amt is not None else 0.0
+                if amt_val > 0 and d_desc:
                     if is_edit:
-                        update_transaction(st.session_state.edit_tc_id, d_date, d_type, d_amt, d_desc, "")
+                        update_transaction(st.session_state.edit_tc_id, d_date, d_type, amt_val, d_desc, "")
                         st.session_state.edit_tc_id = None
                         st.success("Đã sửa!"); time.sleep(0.5); st.rerun()
                     else:
                         lnk = upload_image_to_drive(img, f"TC_{d_date}") if img else ""
-                        add_transaction(d_date, d_type, d_amt, d_desc, lnk)
+                        add_transaction(d_date, d_type, amt_val, d_desc, lnk)
                         st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
                 else: st.warning("Nhập thiếu thông tin!")
         
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-    # LIST VIEW (FIX: SCROLL + ID)
+    # LIST VIEW (SCROLLABLE RIGHT)
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
+        
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
         # SCROLL FIX
@@ -481,19 +488,20 @@ def render_thuchi_module(is_laptop):
                 with c4:
                     if st.session_state.role == 'admin':
                         b1, b2 = st.columns(2)
-                        # Fix Key: Row_Index + unique string
-                        if b1.button("✏️", key=f"btn_edt_tc_{r['Row_Index']}"): 
+                        # Fix Duplicate Key: Row_Index + unique UUID
+                        if b1.button("✏️", key=f"e_tc_{r['Row_Index']}_{uuid.uuid4()}"): 
                             st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
-                        if b2.button("🗑️", key=f"btn_del_tc_{r['Row_Index']}"): 
+                        if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}_{uuid.uuid4()}"): 
                             delete_transaction(r['Row_Index']); st.rerun()
                 st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
 
-    # EXPORT TAB
+    # EXPORT TAB (UNIVERSAL)
     def render_export_tc():
         if not df.empty:
-            d1 = st.date_input("Từ ngày", get_vn_time().replace(day=1), key="d1_ex_tc")
-            d2 = st.date_input("Đến ngày", get_vn_time(), key="d2_ex_tc")
-            if st.button("TẢI EXCEL", key="btn_ex_tc"):
+            d1 = st.date_input("Từ ngày", get_vn_time().replace(day=1), key=f"d1_tc_{uuid.uuid4()}")
+            d2 = st.date_input("Đến ngày", get_vn_time(), key=f"d2_tc_{uuid.uuid4()}")
+            
+            if st.button("TẢI EXCEL", key=f"btn_ex_tc_{uuid.uuid4()}"):
                 dt = convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2)
                 st.download_button("DOWNLOAD", dt, "QuyetToan.xlsx")
         else: st.warning("Không có dữ liệu để xuất")
@@ -526,8 +534,8 @@ def render_vattu_module(is_laptop):
             df_pj = load_project_data()
             ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
             
-            # TẠO MỚI LUÔN Ở ĐẦU
-            p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex)) # Mới nhất lên trên
+            # FIX: TẠO MỚI LUÔN Ở ĐẦU
+            p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
             sel_p = st.selectbox("📁 Dự án:", p_opts, index=1 if len(ex)>0 else 0)
             
             fin_p = st.text_input("Tên dự án:") if sel_p == "++ TẠO DỰ ÁN MỚI ++" else sel_p
@@ -566,7 +574,8 @@ def render_vattu_module(is_laptop):
                 if is_new:
                     c1,c2,c3,c4 = st.columns(4)
                     u1 = c1.text_input("ĐVT Lớn"); u2 = c2.text_input("ĐVT Nhỏ")
-                    ratio = c3.number_input("Quy đổi", 1.0); p1 = c4.number_input("Giá nhập", 0.0)
+                    ratio = c3.number_input("Quy đổi", 1.0); 
+                    p1 = c4.number_input("Giá nhập", min_value=0.0, value=None, placeholder="0")
                 
                 with st.form("vt_add"):
                     # FIX: RADIO INDEX ERROR
@@ -580,13 +589,18 @@ def render_vattu_module(is_laptop):
                     
                     u_ch = st.radio("Đơn vị:", unit_ops, horizontal=True, index=def_idx)
                     c1, c2 = st.columns([1, 2])
-                    qty = c1.number_input("Số lượng:", 0.0)
+                    
+                    # SMART INPUT: VALUE=NONE -> PLACEHOLDER 0
+                    qty = c1.number_input("Số lượng:", min_value=0.0, value=None, placeholder="0")
                     note = c2.text_input("Ghi chú")
                     
                     submitted = st.form_submit_button("➕ THÊM VÀO DỰ ÁN")
                     
                     if submitted:
-                        if qty > 0:
+                        qty_val = qty if qty is not None else 0.0
+                        price_val = p1 if p1 is not None else 0.0
+                        
+                        if qty_val > 0:
                             u1 = auto_capitalize(u1); u2 = auto_capitalize(u2)
                             sel_u = u_ch.split(" (")[0] if "(" in u_ch else u_ch
                             
@@ -594,7 +608,7 @@ def render_vattu_module(is_laptop):
                             if sel_p != "++ TẠO DỰ ÁN MỚI ++" and not df_pj.empty:
                                 f = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name]
                                 if not f.empty: p_sv = f.iloc[0]['MaDuAn']
-                            save_project_material(p_sv, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1, sel_u, qty, note, is_new)
+                            save_project_material(p_sv, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, price_val, sel_u, qty_val, note, is_new)
                             st.success("OK"); time.sleep(0.5); st.rerun()
 
     def render_list_vt():
@@ -627,8 +641,7 @@ def render_vattu_module(is_laptop):
                                 if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
                 # SCROLL FIX
-                container = st.container(height=600) if is_laptop else st.container()
-                with container:
+                with st.container(height=600 if is_laptop else None):
                     for i, r in dv.iterrows():
                         c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
                         c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}</div>", unsafe_allow_html=True)
@@ -637,9 +650,8 @@ def render_vattu_module(is_laptop):
                         with c4:
                             if st.session_state.role == 'admin':
                                 b1, b2 = st.columns(2)
-                                # Fix Key
-                                if b1.button("✏️", key=f"btn_edt_vt_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
-                                if b2.button("🗑️", key=f"btn_del_vt_{r['Row_Index']}"): delete_material_row(r['Row_Index']); st.rerun()
+                                if b1.button("✏️", key=f"vt_e_{r['Row_Index']}_{uuid.uuid4()}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
+                                if b2.button("🗑️", key=f"vt_d_{r['Row_Index']}_{uuid.uuid4()}"): delete_material_row(r['Row_Index']); st.rerun()
                         st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
                 
                 st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
@@ -665,7 +677,7 @@ def render_vattu_module(is_laptop):
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_vt()
         with c2:
-            # FIX: KHO LUÔN HIỆN Ở TAB 2
+            # Tab Kho luôn hiện
             t1, t2, t3 = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
             with t1: render_list_vt()
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
@@ -704,5 +716,4 @@ if check_password():
     with main_tabs[0]: render_thuchi_module(is_laptop)
     with main_tabs[1]: render_vattu_module(is_laptop)
 
-    # FINAL FOOTER
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
