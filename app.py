@@ -11,6 +11,7 @@ import unicodedata
 import pytz
 import random
 import string
+import difflib # Thư viện so khớp chuỗi thông minh
 
 # ==================== 1. CẤU HÌNH & CSS ====================
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
@@ -18,7 +19,6 @@ st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide
 st.markdown("""
 <style>
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
-    
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], 
     .stAppDeployButton, [data-testid="stStatusWidget"], footer, #MainMenu { display: none !important; }
 
@@ -40,8 +40,18 @@ st.markdown("""
     
     .vt-def-box { background-color: #e3f2fd; padding: 15px; border-radius: 10px; border: 1px dashed #1565C0; margin-bottom: 15px; font-weight: bold; color: #0d47a1; }
     .vt-input-box { background-color: #f1f8e9; padding: 15px; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 15px; font-weight: bold; color: #1b5e20; }
-    .total-row { background-color: #fff3cd; color: #b71c1c !important; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
     
+    /* Box gợi ý thông minh */
+    .suggestion-box {
+        background-color: #fff9c4;
+        border-left: 5px solid #fbc02d;
+        padding: 10px;
+        margin-top: -10px;
+        margin-bottom: 15px;
+        border-radius: 4px;
+    }
+    
+    .total-row { background-color: #fff3cd; color: #b71c1c !important; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
     .compact-row { border-bottom: 1px solid #f0f0f0; padding: 8px 0; font-size: 0.9rem; display: flex; align-items: center; }
     .c-name { font-weight: 600; color: #2c3e50; }
     
@@ -194,7 +204,6 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        # (Giữ nguyên định dạng Excel chuẩn từ bản 6.2)
         fmt_title = workbook.add_format({'bold': True, 'font_size': 26, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman'})
         fmt_subtitle = workbook.add_format({'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': 'Times New Roman'})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Times New Roman', 'italic': True})
@@ -205,7 +214,6 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_open_bg = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
         fmt_open_money = workbook.add_format({'border': 1, 'bg_color': '#E0E0E0', 'italic': True, 'bold': True, 'num_format': '#,##0', 'font_size': 11, 'valign': 'vcenter'})
         fmt_red = workbook.add_format({'border': 1, 'num_format': '#,##0', 'font_color': 'red', 'bold': True, 'font_size': 11, 'valign': 'vcenter'})
-        fmt_orange = workbook.add_format({'border': 1, 'num_format': '#,##0', 'bg_color': '#FF9900', 'bold': True, 'font_size': 11, 'valign': 'vcenter'}) 
         fmt_tot = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#FFFF00', 'font_size': 14, 'valign': 'vcenter'})
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FF9900', 'num_format': '#,##0', 'font_size': 14, 'valign': 'vcenter'})
         fmt_normal = workbook.add_format({'border': 1, 'font_size': 11, 'valign': 'vcenter'})
@@ -229,17 +237,17 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
             loai = row['Loai']
             bal = row['ConLai']
             
-            if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_orange
+            if loai == 'Thu': c_fmt = fmt_thu_bg; m_fmt = fmt_thu_money; bal_fmt = fmt_money
             elif loai == 'Open': c_fmt = fmt_open_bg; m_fmt = fmt_open_money; bal_fmt = fmt_open_money
             else: c_fmt = fmt_normal; m_fmt = fmt_money; bal_fmt = fmt_red if bal < 0 else fmt_money
 
             ws.write(r, 0, row['STT'], c_fmt)
-            ws.write(r, 1, row['Khoan'], c_fmt)
-            ws.write(r, 2, row['NgayChi'], c_fmt)
-            ws.write(r, 3, row['NgayNhan'], c_fmt)
-            if loai == 'Open': ws.write(r, 4, "", m_fmt)
-            else: ws.write(r, 4, row['SoTienShow'], m_fmt)
-            ws.write(r, 5, bal, bal_fmt)
+            worksheet.write(r, 1, row['Khoan'], c_fmt)
+            worksheet.write(r, 2, row['NgayChi'], c_fmt)
+            worksheet.write(r, 3, row['NgayNhan'], c_fmt)
+            if loai == 'Open': worksheet.write(r, 4, "", m_fmt)
+            else: worksheet.write(r, 4, row['SoTienShow'], m_fmt)
+            worksheet.write(r, 5, bal, bal_fmt)
             
         l_row = start_row_idx + len(df_report)
         fin_bal = df_report['ConLai'].iloc[-1] if not df_report.empty else 0
@@ -274,7 +282,6 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
             ws.write(row_idx, 5, row['DonGia'], fmt_num)
             ws.write(row_idx, 6, row['ThanhTien'], fmt_num)
             total_money += row['ThanhTien']; row_idx += 1
-            
         ws.merge_range(row_idx, 0, row_idx, 5, "TỔNG CỘNG TIỀN", fmt_total)
         ws.write(row_idx, 6, total_money, fmt_total)
     return output.getvalue()
@@ -358,7 +365,7 @@ def render_thuchi_history(df):
 
 def render_thuchi_report(df):
     if df.empty: st.info("Chưa có dữ liệu."); return
-    d1 = st.date_input("Từ", get_vn_time().replace(day=1)); d2 = st.date_input("Đến", get_vn_time())
+    d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="rp_d1"); d2 = st.date_input("Đến", get_vn_time(), key="rp_d2")
     df_r = process_report_data(df, d1, d2)
     st.dataframe(df_r, use_container_width=True)
 
@@ -401,18 +408,12 @@ def render_vattu_module():
     
     with vt_tabs[0]: # NHẬP LIỆU
         with st.container(border=True):
-            # PROJECT SELECTION LOGIC (UPDATED V6.3)
             df_pj = load_project_data()
             existing_projects = []
             if not df_pj.empty and 'TenDuAn' in df_pj.columns:
                 existing_projects = df_pj['TenDuAn'].unique().tolist()
             
-            # Selectbox với lựa chọn "TẠO DỰ ÁN MỚI"
-            sel_proj_option = st.selectbox(
-                "📁 Chọn Dự án:", 
-                [""] + existing_projects + ["➕ TẠO DỰ ÁN MỚI"],
-                key="sel_proj_main"
-            )
+            sel_proj_option = st.selectbox("📁 Chọn Dự án:", [""] + existing_projects + ["➕ TẠO DỰ ÁN MỚI"], key="sel_proj_main")
             
             final_proj_name = ""
             if sel_proj_option == "➕ TẠO DỰ ÁN MỚI":
@@ -420,20 +421,13 @@ def render_vattu_module():
             elif sel_proj_option != "":
                 final_proj_name = sel_proj_option
             
-            # Xử lý Logic Session & Mã Dự Án
             if final_proj_name:
                 st.session_state.curr_proj_name = final_proj_name
                 proj_code = ""
-                # Nếu là dự án cũ, tìm lại mã cũ để đồng bộ
                 if sel_proj_option != "➕ TẠO DỰ ÁN MỚI" and not df_pj.empty:
-                    found = df_pj[df_pj['TenDuAn'] == final_proj_name]
-                    if not found.empty:
-                        proj_code = found.iloc[0]['MaDuAn']
-                
-                # Nếu không tìm thấy hoặc là mới, sinh mã
-                if not proj_code:
-                    proj_code = generate_project_code(final_proj_name)
-                
+                     found = df_pj[df_pj['TenDuAn'] == final_proj_name]
+                     if not found.empty: proj_code = found.iloc[0]['MaDuAn']
+                if not proj_code: proj_code = generate_project_code(final_proj_name)
                 st.info(f"Mã Dự án: **{proj_code}**")
 
         if 'curr_proj_name' in st.session_state and st.session_state.curr_proj_name:
@@ -442,17 +436,31 @@ def render_vattu_module():
             m_list = df_m['TenVT'].unique().tolist() if not df_m.empty and 'TenVT' in df_m.columns else []
             sel_vt = st.selectbox("📦 Chọn Vật tư:", [""] + m_list + ["++ TẠO VẬT TƯ MỚI ++"])
             
-            is_new = False; vt_final = ""; u1, u2, ratio, p1 = "", "", 1.0, 0.0
-            
+            # --- SMART SUGGESTION (TÍNH NĂNG MỚI V6.4) ---
             if sel_vt == "++ TẠO VẬT TƯ MỚI ++":
-                is_new = True; vt_final = st.text_input("Nhập tên mới:")
+                is_new = True
+                vt_final = st.text_input("Nhập tên mới:")
+                
+                # Logic Gợi ý thông minh (Fuzzy Search)
+                if vt_final and not df_m.empty and 'TenVT' in df_m.columns:
+                    matches = difflib.get_close_matches(vt_final, df_m['TenVT'].tolist(), n=3, cutoff=0.5)
+                    if matches:
+                        st.markdown(f"<div class='suggestion-box'>💡 <b>Có phải bạn muốn nhập:</b></div>", unsafe_allow_html=True)
+                        for match in matches:
+                            if st.button(f"👉 {match}", key=f"sug_{match}"):
+                                # Logic khi bấm chọn gợi ý: Tự động set session state để reload lại form
+                                # Do hạn chế của Streamlit, cách đơn giản nhất là thông báo người dùng chọn lại trên list
+                                st.info(f"Vui lòng chọn **{match}** từ danh sách ở trên để tránh trùng lặp!")
             elif sel_vt != "":
+                is_new = False
                 vt_final = sel_vt
                 if not df_m.empty and 'TenVT' in df_m.columns:
                     row = df_m[df_m['TenVT'] == vt_final].iloc[0]
                     u1 = str(row.get('DVT_Cap1', '')); u2 = str(row.get('DVT_Cap2', ''))
                     try: ratio = float(row.get('QuyDoi', 1)); p1 = float(row.get('DonGia_Cap1', 0))
                     except: ratio=1.0; p1=0.0
+            else:
+                is_new = False; vt_final = ""; u1, u2, ratio, p1 = "", "", 1.0, 0.0
 
             if is_new and vt_final:
                 st.markdown(f"<div class='vt-def-box'>✨ Định nghĩa: {vt_final}</div>", unsafe_allow_html=True)
@@ -481,7 +489,6 @@ def render_vattu_module():
                 
                 if st.button("➕ THÊM VÀO DỰ ÁN", type="primary", use_container_width=True, key="add_vt"):
                     if qty > 0:
-                        # Dùng lại logic lấy mã dự án như trên
                         p_code_save = ""
                         if sel_proj_option != "➕ TẠO DỰ ÁN MỚI" and not df_pj.empty:
                              f = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name]
@@ -493,7 +500,6 @@ def render_vattu_module():
             
             # Show list
             if not df_pj.empty and 'MaDuAn' in df_pj.columns:
-                # Tìm mã dự án hiện tại để filter
                 p_code_curr = ""
                 if sel_proj_option != "➕ TẠO DỰ ÁN MỚI":
                      f = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name]
@@ -548,22 +554,17 @@ def render_vattu_module():
     with vt_tabs[3]: # XUẤT
         df_pj = load_project_data()
         if not df_pj.empty:
-            p_opts = ["TẤT CẢ DỰ ÁN (TỔNG HỢP)"] + df_pj['TenDuAn'].unique().tolist()
+            p_opts = ["TẤT CẢ (TỔNG HỢP)"] + df_pj['TenDuAn'].unique().tolist()
             p_sel = st.selectbox("Chọn dự án xuất:", p_opts, key='xp_sel')
             if st.button("Tải Excel", key="xp_btn"):
                 if "TẤT CẢ" in p_sel:
                     agg = df_pj.groupby(['MaVT', 'TenVT', 'DVT'], as_index=False).agg({'SoLuong': 'sum', 'ThanhTien': 'sum'})
                     agg['DonGia'] = agg.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
-                    data = export_project_materials_excel(agg, "ALL", "TỔNG HỢP TẤT CẢ DỰ ÁN")
+                    data = export_project_materials_excel(agg, "ALL", "TỔNG HỢP")
                     st.download_button("Download Tổng Hợp", data, "TongHop.xlsx")
                 else:
-                    # Lấy mã dự án chuẩn
-                    p_c = ""
-                    f = df_pj[df_pj['TenDuAn'] == p_sel]
-                    if not f.empty: p_c = f.iloc[0]['MaDuAn']
-                    else: p_c = generate_project_code(p_sel)
-                    
-                    data = export_project_materials_excel(f, p_c, p_sel)
+                    p_c = generate_project_code(p_sel)
+                    data = export_project_materials_excel(df_pj[df_pj['TenDuAn'] == p_sel], p_c, p_sel)
                     st.download_button("Download Chi Tiết", data, f"VatTu_{p_c}.xlsx")
 
 # ==================== 8. APP RUN ====================
@@ -579,4 +580,4 @@ main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
 with main_tabs[0]: render_thuchi_module(layout_mode)
 with main_tabs[1]: render_vattu_module()
 
-st.markdown("<div class='app-footer'>Phiên bản: 6.3 Project Selection Upgrade - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-footer'>Phiên bản: 6.4 Smart Auto-Suggest - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
