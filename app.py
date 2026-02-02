@@ -12,19 +12,19 @@ import pytz
 import random
 import string
 
-# ==================== 1. CẤU HÌNH & CSS (TỐI ƯU GIAO DIỆN GỌN) ====================
+# ==================== 1. CẤU HÌNH & CSS (FIX HIỂN THỊ) ====================
 st.set_page_config(page_title="Sổ Thu Chi Pro", page_icon="💎", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. Thu nhỏ lề trang */
-    .block-container { padding-top: 1rem !important; padding-bottom: 2rem !important; }
+    /* Lề trang */
+    .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
     
-    /* 2. Ẩn thành phần thừa */
+    /* ẨN ICON THỪA */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], 
     .stAppDeployButton, [data-testid="stStatusWidget"], footer, #MainMenu { display: none !important; }
 
-    /* 3. Header & Sidebar */
+    /* HEADER & SIDEBAR */
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important; visibility: visible !important;
@@ -32,47 +32,30 @@ st.markdown("""
         z-index: 1000000;
     }
 
-    /* 4. Tối ưu Input */
+    /* INPUT */
     [data-testid="stCameraInput"] { width: 100% !important; }
     .stTextInput input, .stNumberInput input { font-weight: bold; font-size: 0.9rem; min-height: 0px; }
     
-    /* 5. BOX SỐ DƯ */
+    /* BOX SỐ DƯ (ĐÃ FIX MARGIN) */
     .balance-box { 
-        padding: 10px; border-radius: 8px; background-color: #f8f9fa; border: 1px solid #e0e0e0; 
-        margin-bottom: 10px; text-align: center; position: relative;
+        padding: 15px; border-radius: 12px; background-color: #f8f9fa; border: 1px solid #e0e0e0; 
+        margin-bottom: 25px; /* Tăng khoảng cách dưới để không bị dính */
+        text-align: center; position: relative;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    .balance-text { font-size: 1.8rem !important; font-weight: 800; margin: 0; color: #2ecc71; }
+    .balance-text { font-size: 2rem !important; font-weight: 800; margin: 0; color: #2ecc71; }
     
-    /* 6. STYLE DANH SÁCH GỌN (COMPACT LIST) */
-    .compact-row {
-        border-bottom: 1px solid #f0f0f0;
-        padding: 4px 0;
-        font-size: 0.9rem;
-        display: flex;
-        align-items: center;
-    }
+    /* UI VẬT TƯ */
+    .vt-def-box { background-color: #e3f2fd; padding: 15px; border-radius: 10px; border: 1px dashed #1565C0; margin-bottom: 15px; font-weight: bold; color: #0d47a1; }
+    .vt-input-box { background-color: #f1f8e9; padding: 15px; border-radius: 10px; border: 1px solid #81c784; margin-bottom: 15px; font-weight: bold; color: #1b5e20; }
+    .total-row { background-color: #fff3cd; color: #b71c1c !important; font-weight: bold; padding: 10px; border-radius: 5px; text-align: right; margin-top: 10px; }
+    
+    /* DANH SÁCH GỌN */
+    .compact-row { border-bottom: 1px solid #f0f0f0; padding: 8px 0; font-size: 0.9rem; display: flex; align-items: center; }
     .c-name { font-weight: 600; color: #2c3e50; }
-    .c-meta { color: #7f8c8d; font-size: 0.8rem; font-style: italic; margin-left: 5px; }
-    .c-price { font-weight: bold; color: #27ae60; }
     
-    /* Thu nhỏ nút bấm trong danh sách */
-    div[data-testid="column"] button {
-        height: 28px;
-        padding: 0px 10px;
-        font-size: 0.8rem;
-        min-height: 0px;
-        line-height: 1;
-    }
-    
-    .total-row { 
-        background-color: #fff3cd; color: #b71c1c !important; font-weight: bold; 
-        padding: 8px; border-radius: 4px; text-align: right; margin-top: 5px; font-size: 1rem;
-    }
-    
-    .vt-def-box { background-color: #e3f2fd; padding: 10px; border-radius: 5px; border: 1px dashed #1565C0; margin-bottom: 10px; font-size: 0.9rem; font-weight: bold; color: #0d47a1; }
-    .vt-input-box { background-color: #f1f8e9; padding: 10px; border-radius: 5px; border: 1px solid #81c784; margin-bottom: 10px; font-weight: bold; color: #1b5e20; }
-
-    .app-footer { text-align: center; margin-top: 30px; border-top: 1px dashed #eee; color: #ccc; font-size: 0.7rem; }
+    /* FOOTER */
+    .app-footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px dashed #eee; color: #999; font-size: 0.8rem; font-style: italic; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -404,7 +387,11 @@ def render_vattu_module():
                 st.markdown(f"<div class='vt-input-box'>🔽 Nhập số lượng sử dụng</div>", unsafe_allow_html=True)
                 unit_ops = [f"{u1} (Cấp 1)", f"{u2} (Cấp 2)"] if u2 else [f"{u1} (Cấp 1)"]
                 if not u1: unit_ops = ["Mặc định"]
-                u_choice = st.radio("Đơn vị xuất:", unit_ops, horizontal=True)
+                
+                # --- LOGIC MỚI: ƯU TIÊN CHỌN ĐVT NHỎ (Index 1) ---
+                def_index = 1 if u2 else 0 
+                u_choice = st.radio("Đơn vị xuất:", unit_ops, horizontal=True, index=def_index)
+                
                 sel_u = u1 if u1 and u1 in u_choice else (u2 if u2 else "Mặc định")
                 price_suggest = p1 if sel_u == u1 else (p1/ratio if ratio > 0 else 0)
                 
@@ -495,4 +482,4 @@ main_tabs = st.tabs(["💰 THU CHI", "🏗️ VẬT TƯ DỰ ÁN"])
 with main_tabs[0]: render_thuchi_module(layout_mode)
 with main_tabs[1]: render_vattu_module()
 
-st.markdown("<div class='app-footer'>Phiên bản: 5.8 Compact UI - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-footer'>Phiên bản: 6.1 Final Stable Patch - Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
