@@ -184,7 +184,7 @@ def load_data_with_index():
         if df.empty: return pd.DataFrame()
         df['Row_Index'] = range(2, len(df) + 2)
         df['Ngay'] = pd.to_datetime(df['Ngay'], errors='coerce')
-        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float') # Dùng float để giữ số lẻ nếu có
+        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
         return df
     except: return pd.DataFrame()
 
@@ -444,7 +444,7 @@ def render_thuchi_module(is_laptop):
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
             
-            # SMART INPUT: Không set value=0.0 để tránh phải xóa
+            # SMART INPUT: VALUE=NONE -> PLACEHOLDER 0
             val_disp = d_a if is_edit else None
             d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=val_disp, placeholder="0")
             
@@ -470,13 +470,13 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-    # LIST VIEW (SCROLLABLE RIGHT)
+    # LIST VIEW (CONTAINER)
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # SCROLL FIX
+        # SCROLL FIX: CHỈ DÙNG HEIGHT NẾU LAPTOP
         container = st.container(height=600) if is_laptop else st.container()
         with container:
             for i, r in df.sort_values(by='Ngay', ascending=False).head(100).iterrows():
@@ -488,10 +488,10 @@ def render_thuchi_module(is_laptop):
                 with c4:
                     if st.session_state.role == 'admin':
                         b1, b2 = st.columns(2)
-                        # Fix Duplicate Key: Row_Index + unique UUID
-                        if b1.button("✏️", key=f"e_tc_{r['Row_Index']}_{uuid.uuid4()}"): 
+                        # Fix Key Unique
+                        if b1.button("✏️", key=f"btn_edt_tc_{r['Row_Index']}"): 
                             st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
-                        if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}_{uuid.uuid4()}"): 
+                        if b2.button("🗑️", key=f"btn_del_tc_{r['Row_Index']}"): 
                             delete_transaction(r['Row_Index']); st.rerun()
                 st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
 
@@ -584,7 +584,7 @@ def render_vattu_module(is_laptop):
                     if u2: unit_ops.append(f"{u2} (Cấp 2)")
                     if not unit_ops: unit_ops = ["Mặc định"]
                     
-                    # Logic chọn index: Nếu có 2 đơn vị thì chọn cái thứ 2 (index 1), còn không thì 0
+                    # Logic chọn index
                     def_idx = 1 if len(unit_ops) > 1 else 0
                     
                     u_ch = st.radio("Đơn vị:", unit_ops, horizontal=True, index=def_idx)
@@ -641,7 +641,8 @@ def render_vattu_module(is_laptop):
                                 if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
                 # SCROLL FIX
-                with st.container(height=600 if is_laptop else None):
+                container = st.container(height=600) if is_laptop else st.container()
+                with container:
                     for i, r in dv.iterrows():
                         c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
                         c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}</div>", unsafe_allow_html=True)
@@ -650,8 +651,9 @@ def render_vattu_module(is_laptop):
                         with c4:
                             if st.session_state.role == 'admin':
                                 b1, b2 = st.columns(2)
-                                if b1.button("✏️", key=f"vt_e_{r['Row_Index']}_{uuid.uuid4()}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
-                                if b2.button("🗑️", key=f"vt_d_{r['Row_Index']}_{uuid.uuid4()}"): delete_material_row(r['Row_Index']); st.rerun()
+                                # Fix Key
+                                if b1.button("✏️", key=f"btn_edt_vt_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
+                                if b2.button("🗑️", key=f"btn_del_vt_{r['Row_Index']}"): delete_material_row(r['Row_Index']); st.rerun()
                         st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
                 
                 st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
@@ -716,4 +718,5 @@ if check_password():
     with main_tabs[0]: render_thuchi_module(is_laptop)
     with main_tabs[1]: render_vattu_module(is_laptop)
 
+    # FINAL FOOTER
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
