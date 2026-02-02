@@ -15,7 +15,7 @@ import difflib
 import uuid
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (SCROLLABLE LAYOUT)
+# 1. CẤU HÌNH & CSS (ADAPTIVE - TỰ ĐỘNG THEO HỆ THỐNG)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -27,22 +27,13 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* 1. CẤU TRÚC CHUNG */
-    .block-container { padding-top: 2.5rem !important; padding-bottom: 2rem !important; }
+    .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
     
-    /* Hiện lại nút Sidebar (quan trọng) */
-    [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        color: var(--text-color);
-        background-color: var(--secondary-background-color);
-        border: 1px solid rgba(128,128,128,0.3);
-        border-radius: 5px;
-    }
-
-    /* Ẩn các thành phần thừa khác */
+    /* Ẩn thành phần thừa, giữ lại Sidebar Toggle */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, #MainMenu, [data-testid="stStatusWidget"] { display: none !important; }
-    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
+    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
 
-    /* 2. GIAO DIỆN THÍCH ỨNG */
+    /* 2. GIAO DIỆN THÍCH ỨNG (DARK/LIGHT MODE AUTO) */
     .balance-box {
         background-color: var(--secondary-background-color);
         padding: 15px; border-radius: 10px;
@@ -58,12 +49,17 @@ st.markdown("""
     }
 
     /* 3. BUTTONS */
+    /* Nút chính (Lưu/Thêm) */
     [data-testid="stFormSubmitButton"] > button {
         width: 100%; background-color: #ff4b4b; color: white;
         font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px;
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
+    /* Nút Logout trên Top Bar */
+    .logout-btn { border: 1px solid #ef4444; color: #ef4444; font-weight: bold; }
+    
+    /* Nút icon nhỏ (Sửa/Xóa) */
     div[data-testid="column"] button {
         padding: 2px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -71,7 +67,7 @@ st.markdown("""
     }
     div[data-testid="column"] button:hover { border-color: #ff4b4b; color: #ff4b4b; }
 
-    /* 4. TABLE STYLE */
+    /* 4. TABLE STYLE (EXCEL-LIKE) */
     .excel-header {
         background-color: var(--secondary-background-color); padding: 10px 5px;
         font-weight: 800; font-size: 0.85rem; text-transform: uppercase;
@@ -94,8 +90,8 @@ st.markdown("""
         font-weight: 800; padding: 12px; border-radius: 6px; text-align: right; margin-top: 15px; font-size: 1.1rem;
     }
 
-    /* Footer */
-    .app-footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
+    /* Footer Gọn Gàng */
+    .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
     
     .login-container { display: flex; justify-content: center; margin-top: 80px; }
     .login-box { width: 100%; max-width: 400px; padding: 30px; border-radius: 12px; background-color: var(--secondary-background-color); box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; }
@@ -128,14 +124,18 @@ def auto_capitalize(text):
     return text
 
 def format_vnd(amount):
-    """Định dạng số: bỏ .00 nếu là chẵn, thêm .000 nếu > 1000"""
+    """
+    Format số:
+    - Nếu là số nguyên: 1.000.000 (bỏ .00)
+    - Nếu có lẻ: 1.000,5
+    """
     if pd.isna(amount): return "0"
     try:
         val = float(amount)
         if val.is_integer():
             return "{:,.0f}".format(val).replace(",", ".")
         else:
-            return "{:,.2f}".format(val).replace(",", "X").replace(".", ",").replace("X", ".")
+            return "{:,.2f}".format(val).replace(",", "X").replace(".", ",").replace("X", ".").rstrip('0').rstrip(',')
     except: return "0"
 
 def generate_project_code(name):
@@ -189,7 +189,7 @@ def load_data_with_index():
         if df.empty: return pd.DataFrame()
         df['Row_Index'] = range(2, len(df) + 2)
         df['Ngay'] = pd.to_datetime(df['Ngay'], errors='coerce')
-        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('int64')
+        df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float') # Dùng float để giữ số lẻ nếu có
         return df
     except: return pd.DataFrame()
 
@@ -216,14 +216,14 @@ def load_project_data():
 # --- WRITE FUNCTIONS ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
-    sheet.append_row([date.strftime('%Y-%m-%d'), category, int(amount), auto_capitalize(description), image_link])
+    sheet.append_row([date.strftime('%Y-%m-%d'), category, amount, auto_capitalize(description), image_link])
     clear_data_cache()
 
 def update_transaction(row_idx, date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data"); r = int(row_idx)
     sheet.update_cell(r, 1, date.strftime('%Y-%m-%d'))
     sheet.update_cell(r, 2, category)
-    sheet.update_cell(r, 3, int(amount))
+    sheet.update_cell(r, 3, amount)
     sheet.update_cell(r, 4, auto_capitalize(description))
     if image_link: sheet.update_cell(r, 5, image_link)
     clear_data_cache()
@@ -271,7 +271,7 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT ====================
+# ==================== 4. EXCEL EXPORT (UNIVERSAL) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -397,23 +397,13 @@ def render_dashboard_box(bal, thu, chi):
 def check_password():
     if 'role' not in st.session_state: st.session_state.role = None
     if st.session_state.role is None:
-        st.markdown(
-            """
-            <div class="login-container">
-                <div class="login-box">
-                    <h2 style="margin-bottom:20px; color:var(--text-color);">ĐĂNG NHẬP HỆ THỐNG</h2>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns([1, 1, 1])
+        c1, c2, c3 = st.columns([1, 1.5, 1])
         with c2:
+            st.markdown("<br><br><h2 style='text-align:center;'>🔐 HỆ THỐNG ERP</h2>", unsafe_allow_html=True)
             with st.form("login"):
                 u = st.text_input("Tên đăng nhập:").strip()
                 p = st.text_input("Mật khẩu:", type="password")
-                
                 submitted = st.form_submit_button("ĐĂNG NHẬP")
-                
                 if submitted:
                     with st.spinner("Đang xác thực..."):
                         cfg = load_config()
@@ -444,24 +434,23 @@ def render_thuchi_module(is_laptop):
         if st.session_state.role != 'admin': return
         if 'edit_tc_id' not in st.session_state: st.session_state.edit_tc_id = None
         
-        d_d = get_vn_time(); d_t = "Chi"; d_a = 0; d_desc = ""
+        d_d = get_vn_time(); d_t = "Chi"; d_a = 0.0; d_desc = ""
         is_edit = st.session_state.edit_tc_id is not None
         
         if is_edit and not df.empty:
             row = df[df['Row_Index'] == st.session_state.edit_tc_id]
             if not row.empty:
                 row = row.iloc[0]
-                d_d = row['Ngay']; d_t = row['Loai']; d_a = int(row['SoTien']); d_desc = row['MoTa']
+                d_d = row['Ngay']; d_t = row['Loai']; d_a = float(row['SoTien']); d_desc = row['MoTa']
                 st.info(f"✏️ Đang sửa: {d_desc}")
 
         with st.form("tc_form", clear_on_submit=not is_edit):
             c1, c2 = st.columns([1, 1])
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
-            d_amt = st.number_input("Số tiền", min_value=0, step=10000, value=d_a)
+            d_amt = st.number_input("Số tiền", min_value=0.0, step=1000.0, value=d_a)
             d_desc = st.text_input("Mô tả", value=d_desc)
-            if not is_edit: img = st.file_uploader("Ảnh", type=['jpg','png'])
-            else: img = None
+            img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
 
             btn_txt = "CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"
             submitted = st.form_submit_button(btn_txt)
@@ -537,8 +526,9 @@ def render_vattu_module(is_laptop):
             df_pj = load_project_data()
             ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
             
+            # FIX: TẠO MỚI LUÔN Ở ĐẦU
             p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + ex
-            sel_p = st.selectbox("📁 Dự án:", p_opts, index=0)
+            sel_p = st.selectbox("📁 Dự án:", p_opts, index=1 if len(ex)>0 else 0)
             
             fin_p = st.text_input("Tên dự án:") if sel_p == "++ TẠO DỰ ÁN MỚI ++" else sel_p
             fin_p = auto_capitalize(fin_p)
@@ -612,7 +602,6 @@ def render_vattu_module(is_laptop):
                 dv = df_pj[df_pj['TenDuAn'] == vp]
                 st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
                 
-                # Edit Form
                 if st.session_state.role == 'admin':
                     if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                     if st.session_state.edit_vt_id:
@@ -677,22 +666,28 @@ def render_vattu_module(is_laptop):
 
 # ==================== 8. APP RUN ====================
 if check_password():
+    # TOP BAR NAVIGATION
+    col_user, col_mode, col_logout = st.columns([6, 2, 1.5])
+    with col_user:
+        role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
+        st.markdown(f"**Xin chào: {role}**")
+    with col_mode:
+        is_laptop = st.toggle("💻 Laptop Mode", value=True)
+    with col_logout:
+        if st.button("🚪 Đăng xuất", key="top_logout"):
+            st.session_state.role = None; st.rerun()
+
+    st.divider()
+
     with st.sidebar:
         st.header("⚙️ CÀI ĐẶT")
         change_password_ui()
-        st.divider()
-        if st.button("Đăng xuất", use_container_width=True): st.session_state.role = None; st.rerun()
         if st.session_state.role == 'admin':
+            st.divider()
             if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
-    _, col = st.columns([0.1, 10])
-    with col:
-        # Nút chuyển mode ở góc phải trên cùng
-        c_mode = st.columns([8, 2])
-        with c_mode[1]: is_laptop = st.toggle("💻 Laptop Mode", True)
-        
-        main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
-        with main_tabs[0]: render_thuchi_module(is_laptop)
-        with main_tabs[1]: render_vattu_module(is_laptop)
+    main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
+    with main_tabs[0]: render_thuchi_module(is_laptop)
+    with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
