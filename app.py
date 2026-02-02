@@ -30,16 +30,11 @@ st.markdown("""
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, #MainMenu, [data-testid="stStatusWidget"] { display: none !important; }
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 999; }
 
-    /* 2. TIÊU ĐỀ HỆ THỐNG (SYSTEM TITLE) */
+    /* 2. TIÊU ĐỀ HỆ THỐNG */
     .system-title {
-        font-size: 1.6rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        color: var(--primary-color);
-        margin-bottom: 15px;
-        text-align: center;
-        padding-bottom: 10px;
-        border-bottom: 2px solid rgba(128, 128, 128, 0.2);
+        font-size: 1.6rem; font-weight: 900; text-transform: uppercase;
+        color: var(--primary-color); margin-bottom: 15px; text-align: center;
+        padding-bottom: 10px; border-bottom: 2px solid rgba(128, 128, 128, 0.2);
     }
 
     /* 3. BALANCE BOX */
@@ -51,7 +46,7 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .bal-title { font-size: 0.9rem; opacity: 0.8; text-transform: uppercase; font-weight: 600; color: var(--text-color); }
-    .bal-val { font-size: 2.2rem; font-weight: 900; color: #22c55e; } /* Xanh lá */
+    .bal-val { font-size: 2.2rem; font-weight: 900; color: #22c55e; }
     
     /* 4. INPUTS & BUTTONS */
     .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"] {
@@ -65,7 +60,7 @@ st.markdown("""
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút Logout trong Sidebar */
+    /* Nút Logout Sidebar */
     .logout-btn { 
         width: 100%; border: 1px solid #ef4444; color: #ef4444; 
         font-weight: bold; border-radius: 5px; padding: 5px; 
@@ -274,17 +269,16 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT (UPDATED ROW ORDER) ====================
+# ==================== 4. EXCEL EXPORT (FIXED INDEX LOGIC) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        # Font & Styles
         font_name = 'Times New Roman'
         fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name})
         fmt_subtitle = workbook.add_format({'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': font_name})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'italic': True})
-        fmt_system_name = workbook.add_format({'bold': True, 'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'font_color': '#1e3a8a'})
+        fmt_system = workbook.add_format({'bold': True, 'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'font_color': '#1e3a8a'})
         
         fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#D3D3D3', 'font_size': 11, 'font_name': font_name})
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
@@ -293,26 +287,21 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'font_size': 12, 'font_name': font_name})
 
         ws = workbook.add_worksheet("SoQuy")
-        
-        # ROW 1 (0): TITLE
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
-        # ROW 2 (1): Date Range
         ws.merge_range('A2:F2', f"Từ {start_date.strftime('%d/%m/%Y')} đến {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
-        # ROW 3 (2): Export Time
         ws.merge_range('A3:F3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
-        # ROW 4 (3): SYSTEM NAME (NEW)
-        ws.merge_range('A4:F4', "HỆ THỐNG QUYẾT TOÁN", fmt_system_name)
-        # ROW 5 (4): Creator
+        ws.merge_range('A4:F4', "HỆ THỐNG QUYẾT TOÁN", fmt_system)
         ws.merge_range('A5:F5', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
-        # HEADERS START AT ROW 6 (Index 5)
         headers = ["STT", "Khoản", "Ngày chi", "Ngày Nhận", "Số tiền", "Còn lại"]
         for c, h in enumerate(headers): ws.write(5, c, h, fmt_header)
         ws.set_column('B:B', 40); ws.set_column('C:D', 15); ws.set_column('E:F', 18)
 
-        # DATA
+        # Reset Index for clean loop
+        df_clean = df_report.reset_index(drop=True)
+        
         start_row_idx = 6
-        for i, row in df_report.iterrows():
+        for i, row in df_clean.iterrows():
             r = start_row_idx + i
             ws.write(r, 0, row['STT'], fmt_cell)
             ws.write(r, 1, row['Khoan'], fmt_cell)
@@ -321,9 +310,9 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
             ws.write(r, 4, row['SoTienShow'] if row['Loai']!='Open' else "", fmt_num)
             ws.write(r, 5, row['ConLai'], fmt_num)
             
-        l_row = start_row_idx + len(df_report)
+        l_row = start_row_idx + len(df_clean)
         ws.merge_range(l_row, 0, l_row, 4, "TỔNG CỘNG", fmt_tot_l)
-        ws.write(l_row, 5, df_report.iloc[-1]['ConLai'] if not df_report.empty else 0, fmt_tot_v)
+        ws.write(l_row, 5, df_clean.iloc[-1]['ConLai'] if not df_clean.empty else 0, fmt_tot_v)
     return output.getvalue()
 
 def export_project_materials_excel(df_proj, proj_code, proj_name):
@@ -334,7 +323,7 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name})
         fmt_subtitle = workbook.add_format({'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': font_name})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'italic': True})
-        fmt_system_name = workbook.add_format({'bold': True, 'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'font_color': '#1e3a8a'})
+        fmt_system = workbook.add_format({'bold': True, 'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'font_color': '#1e3a8a'})
         
         fmt_header = workbook.add_format({'bold': True, 'border': 1, 'align': 'center', 'bg_color': '#D3D3D3', 'font_size': 11, 'font_name': font_name})
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
@@ -344,25 +333,22 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         
         ws = workbook.add_worksheet("BangKe")
         
-        # ROW 1 (0): TITLE
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
-        # ROW 2 (1): Project Name
         ws.merge_range('A2:G2', f"Dự án: {proj_name}", fmt_subtitle)
-        # ROW 3 (2): Export Time
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
-        # ROW 4 (3): SYSTEM NAME (NEW)
-        ws.merge_range('A4:G4', "HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN", fmt_system_name)
-        # ROW 5 (4): Creator
+        ws.merge_range('A4:G4', "HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN", fmt_system)
         ws.merge_range('A5:G5', "Người tạo: TUẤN VDS.HCM", fmt_info)
         
-        # HEADERS START AT ROW 6 (Index 5)
         cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền"]
         for i, h in enumerate(cols): ws.write(5, i, h, fmt_header)
         ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15)
         
+        # CRITICAL FIX: RESET INDEX TO AVOID GAPS
+        df_clean = df_proj.reset_index(drop=True)
+        
         total = 0
         start_row_idx = 6
-        for i, row in df_proj.iterrows():
+        for i, row in df_clean.iterrows():
             r = start_row_idx + i
             ws.write(r, 0, i+1, fmt_cell)
             ws.write(r, 1, row['MaVT'], fmt_cell)
@@ -373,7 +359,7 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
             ws.write(r, 6, row['ThanhTien'], fmt_num)
             total += row['ThanhTien']
             
-        l_row = start_row_idx + len(df_proj)
+        l_row = start_row_idx + len(df_clean)
         ws.merge_range(l_row, 0, l_row, 5, "TỔNG CỘNG", fmt_tot_l)
         ws.write(l_row, 6, total, fmt_tot_v)
     return output.getvalue()
@@ -497,7 +483,7 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-    # LIST VIEW (STABLE KEYS - NO UUID)
+    # LIST VIEW (STABLE KEYS)
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         
@@ -514,7 +500,7 @@ def render_thuchi_module(is_laptop):
                 with c4:
                     if st.session_state.role == 'admin':
                         b1, b2 = st.columns(2)
-                        # KEY CỐ ĐỊNH THEO ROW_INDEX (KHÔNG DÙNG UUID ĐỂ TRÁNH LỖI)
+                        # KEY CỐ ĐỊNH THEO ROW_INDEX (FIX LỖI NÚT KHÔNG ĂN)
                         if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): 
                             st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
                         if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): 
@@ -567,7 +553,7 @@ def render_vattu_module(is_laptop):
             df_pj = load_project_data()
             ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
             
-            # TẠO MỚI LUÔN Ở ĐẦU (FIX DROP DOWN RESET)
+            # TẠO MỚI LUÔN Ở ĐẦU
             p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
             sel_p = st.selectbox("📁 Dự án:", p_opts, index=1 if len(ex)>0 else 0, key="sel_pj_main")
             
@@ -709,7 +695,7 @@ def render_vattu_module(is_laptop):
 
             if st.button("TẢI EXCEL", key="btn_xpv_vt"):
                 excel_data = export_project_materials_excel(data_to_export, p_code, p_name)
-                st.download_button("TẢI EXCEL", excel_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button("DOWNLOAD FILE", excel_data, fname)
 
     # LAYOUT
     if is_laptop:
