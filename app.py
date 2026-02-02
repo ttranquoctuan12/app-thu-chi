@@ -275,8 +275,8 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
         fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_size': 11, 'font_name': font_name})
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'font_size': 12, 'font_name': font_name})
-
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
+        
         ws = workbook.add_worksheet("SoQuy")
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         ws.merge_range('A2:F2', f"Từ {start_date.strftime('%d/%m/%Y')} đến {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
@@ -321,6 +321,7 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
         
         ws = workbook.add_worksheet("BangKe")
+        
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
         ws.merge_range('A2:G2', f"Dự án: {proj_name}", fmt_subtitle)
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
@@ -353,27 +354,17 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
 def process_report_data(df, start_date=None, end_date=None):
     if df.empty: return pd.DataFrame()
     df_all = df.sort_values(by=['Ngay', 'Row_Index']).copy()
-    
-    # FIX: Balance Logic = Income - Expense (Not sum all)
     df_all['SignedAmount'] = df_all.apply(lambda x: x['SoTien'] if x['Loai'] == 'Thu' else -x['SoTien'], axis=1)
     df_all['ConLai'] = df_all['SignedAmount'].cumsum()
-    
     if start_date and end_date:
         mask_before = df_all['Ngay'].dt.date < start_date
         df_before = df_all[mask_before]
         opening_balance = df_before.iloc[-1]['ConLai'] if not df_before.empty else 0
-        
         mask_in = (df_all['Ngay'].dt.date >= start_date) & (df_all['Ngay'].dt.date <= end_date)
         df_proc = df_all[mask_in].copy()
-        
-        # Recalculate running balance with opening
-        if not df_proc.empty:
-            df_proc['ConLai'] = opening_balance + df_proc['SignedAmount'].cumsum()
-            
         row_open = {'Row_Index': 0, 'Ngay': pd.Timestamp(start_date), 'Loai': 'Open', 'SoTien': 0, 'MoTa': f"Số dư đầu kỳ", 'HinhAnh': '', 'ConLai': opening_balance, 'SignedAmount': 0}
         df_proc = pd.concat([pd.DataFrame([row_open]), df_proc], ignore_index=True)
     else: df_proc = df_all.copy()
-    
     if df_proc.empty: return pd.DataFrame()
     df_proc['STT'] = range(1, len(df_proc) + 1)
     df_proc['Khoan'] = df_proc.apply(lambda x: x['MoTa'] if x['Loai'] == 'Open' else auto_capitalize(x['MoTa']), axis=1)
@@ -453,6 +444,7 @@ def render_thuchi_module(is_laptop):
             c1, c2 = st.columns([1, 1])
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
+            
             d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=d_a, placeholder="0")
             d_desc = st.text_input("Mô tả", value=d_desc)
             img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
@@ -480,13 +472,11 @@ def render_thuchi_module(is_laptop):
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # FIX: Invalid Height Error
+        # FIX: HEIGHT CONDITION
         if is_laptop:
-            with st.container(height=600):
-                _render_rows(df)
+            with st.container(height=600): _render_rows(df)
         else:
-            with st.container():
-                _render_rows(df)
+            with st.container(): _render_rows(df)
 
     def _render_rows(df):
         for i, r in df.sort_values(by='Ngay', ascending=False).head(100).iterrows():
@@ -540,13 +530,14 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # FIX: PRE-LOAD & SAFE INDEX
+    # FIX: SHARED PROJECT LIST FOR ALL USERS
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
     
     if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
-    # Find current project index in new list
+    
+    # FIX: Safety Index Check
     curr_idx = 0
     if st.session_state.curr_proj_name in p_opts:
         curr_idx = p_opts.index(st.session_state.curr_proj_name)
@@ -562,11 +553,10 @@ def render_vattu_module(is_laptop):
             fin_p = auto_capitalize(fin_p)
             
             if fin_p and sel_p == "++ TẠO DỰ ÁN MỚI ++":
-                st.session_state.curr_proj_name = fin_p # Update if new
+                st.session_state.curr_proj_name = fin_p
                 pc = generate_project_code(fin_p)
                 st.caption(f"Mã mới: {pc}")
             elif sel_p != "++ TẠO DỰ ÁN MỚI ++":
-                # Find code
                 found = df_pj[df_pj['TenDuAn'] == sel_p]
                 if not found.empty: st.caption(f"Mã: {found.iloc[0]['MaDuAn']}")
 
@@ -628,9 +618,16 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         # SYNC VIEW
         vp = st.session_state.curr_proj_name
+        
+        # Viewer Dropdown
+        if st.session_state.role != 'admin':
+            vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
+
         if vp and vp != "++ TẠO DỰ ÁN MỚI ++" and not df_pj.empty:
             dv = df_pj[df_pj['TenDuAn'] == vp]
-            st.markdown(f"**Dự án đang xem: {vp}**")
+            if st.session_state.role == 'admin':
+                st.markdown(f"**Dự án đang xem: {vp}**")
+            
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
             # Edit
