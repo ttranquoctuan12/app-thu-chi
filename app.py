@@ -466,10 +466,11 @@ def render_thuchi_module(is_laptop):
 
     if 'edit_tc_id' not in st.session_state: st.session_state.edit_tc_id = None
 
+    # --- INPUT FORM & TOOLS ---
     def render_input_tc():
-        # Only render input form for admin
         if st.session_state.role != 'admin': return
         
+        # 1. FORM NHẬP LIỆU CHÍNH
         d_d = get_vn_time(); d_t = "Chi"; d_a = None; d_desc = ""
         is_edit = st.session_state.edit_tc_id is not None
         
@@ -490,9 +491,7 @@ def render_thuchi_module(is_laptop):
             img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
 
             btn_txt = "CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"
-            submitted = st.form_submit_button(btn_txt)
-            
-            if submitted:
+            if st.form_submit_button(btn_txt):
                 amt_val = d_amt if d_amt is not None else 0.0
                 if amt_val > 0 and d_desc:
                     if is_edit:
@@ -508,17 +507,32 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
+        # 2. CÔNG CỤ CẬP NHẬT HÀNG LOẠT (MỚI)
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🛠️ CẬP NHẬT GIÁ HÀNG LOẠT", expanded=False):
+            st.caption("Ví dụ: Tìm 'Công tác phí' và đổi hết thành 200.000")
+            with st.form("bulk_update_form"):
+                k_word = st.text_input("Từ khóa (trong Mô tả):", placeholder="Ví dụ: Công tác phí")
+                n_amount = st.number_input("Số tiền MỚI:", min_value=0.0, step=10000.0, format="%.0f")
+                
+                if st.form_submit_button("ÁP DỤNG THAY ĐỔI"):
+                    if k_word and n_amount > 0:
+                        count = batch_update_amount(k_word, n_amount)
+                        if count > 0:
+                            st.success(f"Đã cập nhật {count} dòng thành công!"); time.sleep(1); st.rerun()
+                        elif count == 0:
+                            st.warning("Không tìm thấy dòng nào chứa từ khóa này.")
+                    else:
+                        st.error("Vui lòng nhập từ khóa và số tiền.")
+
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # CONDITIONAL LAYOUT FOR VIEWER/LAPTOP
-        use_container = is_laptop
-        if use_container:
-            with st.container(height=600):
-                _render_rows(df)
+        if is_laptop:
+            with st.container(height=600): _render_rows(df)
         else:
-            _render_rows(df) # Render directly without fixed height container
+            with st.container(): _render_rows(df)
 
     def _render_rows(df):
         for i, r in df.sort_values(by='Ngay', ascending=False).head(100).iterrows():
@@ -547,9 +561,7 @@ def render_thuchi_module(is_laptop):
                 st.download_button("DOWNLOAD FILE", excel_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Không có dữ liệu")
 
-    # LAYOUT LOGIC
     if is_laptop and st.session_state.role == 'admin':
-        # Admin Laptop: Split Columns
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_tc()
         with c2:
@@ -561,7 +573,6 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
-        # Viewer or Mobile: Stacked Layout (Full Width)
         if st.session_state.role == 'admin':
             mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
             with mt[0]: render_input_tc()
@@ -572,7 +583,6 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with mt[3]: render_export_tc()
         else:
-            # Viewer: Only View Tabs
             mt = st.tabs(["LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
             with mt[0]: render_list_tc()
             with mt[1]:
@@ -793,4 +803,5 @@ if check_password():
     with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+
 
