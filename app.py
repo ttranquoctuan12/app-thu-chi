@@ -38,15 +38,11 @@ st.markdown("""
     footer { display: none !important; }
 
     /* 2. TOP BAR STYLE */
-    .top-bar {
+    .top-bar-container {
+        display: flex; justify-content: space-between; align-items: center;
         background-color: var(--secondary-background-color);
-        padding: 10px 15px;
-        border-radius: 8px;
-        border: 1px solid rgba(128,128,128,0.2);
-        margin-bottom: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        padding: 10px 15px; border-radius: 8px;
+        border: 1px solid rgba(128,128,128,0.2); margin-bottom: 20px;
     }
 
     /* 3. SYSTEM TITLE */
@@ -623,7 +619,7 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # GLOBAL PROJECT LOAD FOR ALL USERS
+    # SHARED PROJECT LIST
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
@@ -711,7 +707,7 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         vp = st.session_state.curr_proj_name
         
-        # VIEWER: SELECTBOX IF NOT SET
+        # Viewer Dropdown
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -722,6 +718,7 @@ def render_vattu_module(is_laptop):
             
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
+            # Edit
             if st.session_state.role == 'admin':
                 if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                 if st.session_state.edit_vt_id:
@@ -803,7 +800,6 @@ def render_vattu_module(is_laptop):
 
 # ==================== 8. APP RUN ====================
 if check_password():
-    # TOP BAR (Sidebar Removed)
     c1, c2, c3 = st.columns([6, 2, 2])
     with c1:
         role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
@@ -814,7 +810,7 @@ if check_password():
         if st.button("🚪 Đăng xuất", key="logout_top"):
             st.session_state.role = None; st.rerun()
     
-    change_password_ui() # Show Settings Below
+    change_password_ui()
 
     st.divider()
 
