@@ -14,7 +14,7 @@ import string
 import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (ADAPTIVE THEME)
+# 1. CẤU HÌNH & CSS (TOP BAR UI)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -27,14 +27,19 @@ st.markdown("""
 <style>
     /* 1. RESET LAYOUT */
     .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
+    
+    /* Ẩn Header & Footer mặc định của Streamlit */
     [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, [data-testid="stStatusWidget"] { display: none !important; }
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
-    [data-testid="stSidebarCollapsedControl"] { display: block !important; }
+    
+    /* Ẩn hẳn Sidebar (vì đã đưa lên Top) */
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
 
     /* 2. SYSTEM TITLE */
     .system-title {
         font-size: 1.5rem; font-weight: 900; text-transform: uppercase;
-        color: var(--primary-color); text-align: center; margin-bottom: 20px;
+        color: var(--primary-color); text-align: center; margin-top: 10px; margin-bottom: 20px;
         border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 10px;
     }
 
@@ -55,13 +60,14 @@ st.markdown("""
         font-weight: 600; border-radius: 6px;
     }
     
+    /* Nút Submit Đỏ */
     [data-testid="stFormSubmitButton"] > button {
         width: 100%; background-color: #ff4b4b; color: white;
         font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px;
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút Icon Sửa/Xóa */
+    /* Nút Sửa/Xóa Nhỏ */
     div[data-testid="column"] button {
         padding: 0px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -92,6 +98,12 @@ st.markdown("""
 
     .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
     .login-container { display: flex; justify-content: center; margin-top: 80px; }
+    
+    /* Top Bar Styling */
+    .top-bar-container {
+        padding: 10px; background-color: var(--secondary-background-color);
+        border-radius: 10px; margin-bottom: 20px; border: 1px solid rgba(128,128,128,0.1);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -223,7 +235,6 @@ def delete_transaction(row_idx):
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
 def execute_bulk_update_tc(indices, col_idx, new_value):
-    """Module sửa hàng loạt cho Thu Chi"""
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
         cells = []
@@ -290,7 +301,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
         fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_size': 11, 'font_name': font_name})
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'font_size': 12, 'font_name': font_name})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
 
         ws = workbook.add_worksheet("SoQuy")
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
@@ -433,11 +444,10 @@ def check_password():
     return True
 
 def change_password_ui():
-    with st.expander("🔐 Đổi mật khẩu"):
-        with st.form("cp"):
-            n = st.text_input("Mật khẩu mới:", type="password")
-            if st.form_submit_button("Lưu"):
-                update_password(st.session_state.role, n); st.success("Xong!")
+    with st.form("cp"):
+        n = st.text_input("Mật khẩu mới:", type="password")
+        if st.form_submit_button("Lưu"):
+            update_password(st.session_state.role, n); st.success("Xong!")
 
 # --- THU CHI UI ---
 def render_thuchi_module(is_laptop):
@@ -491,7 +501,7 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-        # --- BULK EDITOR ---
+        # BULK EDITOR
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander("🛠️ CÔNG CỤ SỬA HÀNG LOẠT (ADVANCED)", expanded=False):
             st.info("Tìm các dòng chứa từ khóa và thay thế giá trị.")
@@ -504,33 +514,23 @@ def render_thuchi_module(is_laptop):
                 
                 if st.form_submit_button("XEM TRƯỚC & THỰC HIỆN"):
                     if kw and val_new:
-                        # Find Rows
                         mask = df[col_search].astype(str).str.contains(kw, case=False, na=False)
                         rows_found = df[mask]
-                        
                         if not rows_found.empty:
                             st.write(f"Tìm thấy {len(rows_found)} dòng:")
                             st.dataframe(rows_found[['Ngay', 'Loai', 'SoTien', 'MoTa']], use_container_width=True)
-                            
-                            # Execute Logic
                             indices = rows_found['Row_Index'].tolist()
-                            
-                            # Map Col Name to Col Index (1-based in Sheet: Ngay=1, Loai=2, SoTien=3, MoTa=4)
                             col_map = {"Ngay": 1, "Loai": 2, "SoTien": 3, "MoTa": 4}
                             target_idx = col_map.get(col_target, 3)
-                            
                             if execute_bulk_update_tc(indices, target_idx, val_new):
-                                st.success("✅ ĐÃ CẬP NHẬT THÀNH CÔNG! Vui lòng đợi làm mới..."); time.sleep(2); st.rerun()
-                            else:
-                                st.error("Lỗi khi cập nhật Google Sheet")
-                        else:
-                            st.warning("Không tìm thấy dữ liệu phù hợp.")
+                                st.success("✅ ĐÃ CẬP NHẬT THÀNH CÔNG!"); time.sleep(2); st.rerun()
+                            else: st.error("Lỗi khi cập nhật.")
+                        else: st.warning("Không tìm thấy dữ liệu.")
 
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # FIX: HEIGHT CONDITION
         if is_laptop:
             with st.container(height=600): _render_rows(df)
         else:
@@ -546,7 +546,6 @@ def render_thuchi_module(is_laptop):
             with c4:
                 if st.session_state.role == 'admin':
                     b1, b2 = st.columns(2)
-                    # FIX: STABLE KEYS
                     if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): 
                         st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
                     if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): 
@@ -564,6 +563,7 @@ def render_thuchi_module(is_laptop):
                 st.download_button("DOWNLOAD FILE", excel_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Không có dữ liệu")
 
+    # LAYOUT
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_tc()
@@ -576,35 +576,33 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
-        # Full Layout for Viewer or Mobile
+        # FULL VIEW FOR VIEWER/MOBILE
+        tabs = ["LỊCH SỬ", "SỔ QUỸ", "XUẤT"]
+        if st.session_state.role == 'admin': tabs = ["NHẬP"] + tabs
+        mt = st.tabs(tabs)
+        
+        idx = 0
         if st.session_state.role == 'admin':
-            mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
-            with mt[0]: render_input_tc()
-            with mt[1]: render_list_tc()
-            with mt[2]:
-                d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1_rp")
-                d2 = st.date_input("Đến", get_vn_time(), key="m_d2_rp")
-                st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
-            with mt[3]: render_export_tc()
-        else:
-            mt = st.tabs(["LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
-            with mt[0]: render_list_tc()
-            with mt[1]:
-                d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="v_d1_rp")
-                d2 = st.date_input("Đến", get_vn_time(), key="v_d2_rp")
-                st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
-            with mt[2]: render_export_tc()
+            with mt[0]: render_input_tc(); idx += 1
+        
+        with mt[idx]: render_list_tc()
+        with mt[idx+1]:
+            d1 = st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1_rp")
+            d2 = st.date_input("Đến", get_vn_time(), key="m_d2_rp")
+            st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
+        with mt[idx+2]: render_export_tc()
 
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
+    # SHARED PROJECT LIST
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
     
     if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
     
-    # FIX: Safety Index Check
+    # SAFE INDEX
     curr_idx = 0
     if st.session_state.curr_proj_name in p_opts:
         curr_idx = p_opts.index(st.session_state.curr_proj_name)
@@ -662,6 +660,7 @@ def render_vattu_module(is_laptop):
                     
                     def_idx = 1 if len(unit_ops) > 1 else 0
                     u_ch = st.radio("Đơn vị:", unit_ops, horizontal=True, index=def_idx)
+                    
                     c1, c2 = st.columns([1, 2])
                     qty = c1.number_input("Số lượng:", min_value=0.0, value=None, placeholder="0")
                     note = c2.text_input("Ghi chú")
@@ -684,7 +683,7 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         vp = st.session_state.curr_proj_name
         
-        # Viewer Logic
+        # Viewer Dropdown
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -695,7 +694,6 @@ def render_vattu_module(is_laptop):
             
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
-            # Edit
             if st.session_state.role == 'admin':
                 if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                 if st.session_state.edit_vt_id:
@@ -711,11 +709,9 @@ def render_vattu_module(is_laptop):
                                 st.session_state.edit_vt_id = None; st.rerun()
                             if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
-            # LIST RENDER LOGIC
-            use_container = is_laptop
-            if use_container:
-                with st.container(height=600):
-                    _render_vt_rows(dv)
+            # SCROLL FIX
+            if is_laptop:
+                with st.container(height=600): _render_vt_rows(dv)
             else:
                 _render_vt_rows(dv)
             
@@ -754,9 +750,8 @@ def render_vattu_module(is_laptop):
                 excel_data = export_project_materials_excel(data_to_export, p_code, p_name)
                 st.download_button("DOWNLOAD FILE", excel_data, fname)
 
-    # LAYOUT LOGIC
+    # LAYOUT
     if is_laptop and st.session_state.role == 'admin':
-        # Admin Laptop: Split View
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_vt()
         with c2:
@@ -765,40 +760,43 @@ def render_vattu_module(is_laptop):
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
-        # Viewer or Mobile: Full View
+        # FULL VIEW FOR VIEWER/MOBILE
+        tabs = ["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"]
+        if st.session_state.role == 'admin': tabs = ["NHẬP LIỆU"] + tabs
+        
+        mt = st.tabs(tabs)
+        idx = 0
         if st.session_state.role == 'admin':
-            mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
-            with mt[0]: render_input_vt()
-            with mt[1]: render_list_vt()
-            with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
-            with mt[3]: render_export_vt()
-        else:
-            # Viewer: Only View Tabs
-            mt = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
-            with mt[0]: render_list_vt()
-            with mt[1]: st.dataframe(load_materials_master(), use_container_width=True)
-            with mt[2]: render_export_vt()
+            with mt[0]: render_input_vt(); idx += 1
+        
+        with mt[idx]: render_list_vt()
+        with mt[idx+1]: st.dataframe(load_materials_master(), use_container_width=True)
+        with mt[idx+2]: render_export_vt()
 
 # ==================== 8. APP RUN ====================
 if check_password():
-    col_user, col_mode = st.columns([8, 2])
-    with col_user:
-        role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
-        st.markdown(f"**Xin chào: {role}**")
-    with col_mode:
+    # TOP BAR NAVIGATION
+    c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
+    
+    with c1:
+        role = "QUẢN TRỊ VIÊN" if st.session_state.role == 'admin' else "NGƯỜI XEM"
+        st.markdown(f"👋 **Xin chào: {role}**")
+    
+    with c2:
         is_laptop = st.toggle("💻 Laptop Mode", value=True)
+        
+    with c3:
+        with st.expander("⚙️ Cài đặt"):
+            change_password_ui()
+            if st.session_state.role == 'admin':
+                if st.button("🔄 Làm mới dữ liệu", use_container_width=True): 
+                    clear_data_cache(); st.rerun()
+    
+    with c4:
+        if st.button("🚪 Thoát"):
+            st.session_state.role = None; st.rerun()
 
     st.divider()
-
-    with st.sidebar:
-        st.header("⚙️ CÀI ĐẶT")
-        if st.button("🚪 Đăng xuất", use_container_width=True):
-            st.session_state.role = None; st.rerun()
-            
-        change_password_ui()
-        if st.session_state.role == 'admin':
-            st.divider()
-            if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
     main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
     with main_tabs[0]: render_thuchi_module(is_laptop)
