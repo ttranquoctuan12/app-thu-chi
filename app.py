@@ -147,7 +147,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 3. DATA LAYER (ROBUST) ====================
+# ==================== 3. DATA LAYER ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -156,18 +156,39 @@ def load_config():
     try: sheet = wb.worksheet("config")
     except:
         sheet = wb.add_worksheet("config", 100, 2)
-        sheet.append_row(["Key", "Value"]); sheet.append_row(["admin_pwd", "admin123"]); sheet.append_row(["viewer_pwd", "xem123"])
+        sheet.append_row(["Key", "Value"]); 
+        sheet.append_row(["admin_pwd", "admin123"]); 
+        sheet.append_row(["viewer_pwd", "xem123"])
+    
     records = sheet.get_all_records()
     config = {row['Key']: str(row['Value']) for row in records}
+    
+    # Defaults
     if 'admin_pwd' not in config: config['admin_pwd'] = "admin123"
     if 'viewer_pwd' not in config: config['viewer_pwd'] = "xem123"
+    # Debt Defaults (Sẽ được cập nhật từ giao diện)
+    if 'debt_1_name' not in config: config['debt_1_name'] = "SAMSUNG S1 HN"
+    if 'debt_1_val' not in config: config['debt_1_val'] = "-4000000"
+    if 'debt_2_name' not in config: config['debt_2_name'] = "TẾT 2025"
+    if 'debt_2_val' not in config: config['debt_2_val'] = "-5000000"
+
     return config
 
+def update_config_value(key, value):
+    """Cập nhật giá trị trong sheet Config"""
+    try:
+        client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("config")
+        cell = sheet.find(key)
+        if cell:
+            sheet.update_cell(cell.row, 2, str(value))
+        else:
+            sheet.append_row([key, str(value)])
+        clear_data_cache()
+        return True
+    except: return False
+
 def update_password(role, new_pass):
-    client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("config")
-    cell = sheet.find(f"{role}_pwd")
-    if cell: sheet.update_cell(cell.row, 2, new_pass); clear_data_cache(); return True
-    return False
+    return update_config_value(f"{role}_pwd", new_pass)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_with_index():
@@ -178,7 +199,6 @@ def load_data_with_index():
         df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame()
         df['Row_Index'] = range(2, len(df) + 2)
-        # Parse dates robustly
         df['Ngay'] = pd.to_datetime(df['Ngay'], dayfirst=True, errors='coerce')
         df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
         df = df.dropna(subset=['Ngay'])
@@ -276,15 +296,20 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT (UPDATED FOOTER) ====================
+# ==================== 4. EXCEL EXPORT (DYNAMIC DEBT) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
+    
+    # Load debt from config
+    cfg = load_config()
+    d1_n = cfg.get('debt_1_name', "Khoản nợ 1")
+    d1_v = float(cfg.get('debt_1_val', 0))
+    d2_n = cfg.get('debt_2_name', "Khoản nợ 2")
+    d2_v = float(cfg.get('debt_2_val', 0))
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
-        # FONT
         font_name = 'Times New Roman'
-        
-        # STYLES
         fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name})
         fmt_subtitle = workbook.add_format({'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': font_name})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'italic': True})
@@ -294,9 +319,9 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
         fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_size': 11, 'font_name': font_name})
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'font_size': 12, 'font_name': font_name})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
         
-        # NEW FOOTER STYLES
+        # New styles for Debt Footer
         fmt_footer_text = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'font_color': 'black'})
         fmt_footer_val = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bold': True})
         fmt_footer_sum_l = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'right', 'font_name': font_name, 'border': 1})
@@ -325,26 +350,27 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
             ws.write(r, 5, row['ConLai'], fmt_num)
             
         l_row = start_row + len(df_clean)
+        
+        # 1. CURRENT TOTAL
         ws.merge_range(l_row, 0, l_row, 4, "TỔNG CỘNG", fmt_tot_l)
         last_bal = df_clean.iloc[-1]['ConLai'] if not df_clean.empty else 0
         ws.write(l_row, 5, last_bal, fmt_tot_v)
         
-        # --- NEW SECTION: TẠM TÍNH / NỢ ---
-        # 2 lines gap
+        # 2. DEBT SECTION (2 lines gap)
         f_row = l_row + 2 
         
-        # ITEM 1
-        ws.merge_range(f_row, 3, f_row, 4, "SAMSUNG S1 HN", fmt_footer_text)
-        ws.write(f_row, 5, -4000000, fmt_footer_val)
+        # Debt 1
+        ws.merge_range(f_row, 3, f_row, 4, d1_n, fmt_footer_text)
+        ws.write(f_row, 5, d1_v, fmt_footer_val)
         
-        # ITEM 2
+        # Debt 2
         f_row += 1
-        ws.merge_range(f_row, 3, f_row, 4, "TẾT 2025", fmt_footer_text)
-        ws.write(f_row, 5, -5000000, fmt_footer_val)
+        ws.merge_range(f_row, 3, f_row, 4, d2_n, fmt_footer_text)
+        ws.write(f_row, 5, d2_v, fmt_footer_val)
         
-        # SUM
+        # 3. GRAND TOTAL (PROVISIONAL)
         f_row += 1
-        total_pending = last_bal - 4000000 - 5000000
+        total_pending = last_bal + d1_v + d2_v # Add because debts are usually negative
         ws.merge_range(f_row, 0, f_row, 4, "TỔNG TẠM TÍNH", fmt_footer_sum_l)
         ws.write(f_row, 5, total_pending, fmt_footer_sum_v)
 
@@ -367,7 +393,6 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
         
         ws = workbook.add_worksheet("BangKe")
-        
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
         ws.merge_range('A2:G2', f"Dự án: {proj_name}", fmt_subtitle)
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
@@ -524,31 +549,41 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-        # BULK EDITOR
+        # BULK EDITOR & DEBT MANAGER
         st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("🛠️ CÔNG CỤ SỬA HÀNG LOẠT (ADVANCED)", expanded=False):
-            st.info("Tìm các dòng chứa từ khóa và thay thế giá trị.")
-            with st.form("bulk_edit_form"):
-                col_search = st.selectbox("Tìm kiếm theo cột:", ["MoTa", "Loai", "Ngay"], index=0)
-                kw = st.text_input("Từ khóa tìm kiếm (Ví dụ: Công tác phí):")
-                
-                col_target = st.selectbox("Cột cần sửa giá trị:", ["SoTien", "Loai", "MoTa"], index=0)
-                val_new = st.text_input("Giá trị MỚI (Ví dụ: 200000):")
-                
-                if st.form_submit_button("XEM TRƯỚC & THỰC HIỆN"):
-                    if kw and val_new:
-                        mask = df[col_search].astype(str).str.contains(kw, case=False, na=False)
-                        rows_found = df[mask]
-                        if not rows_found.empty:
-                            st.write(f"Tìm thấy {len(rows_found)} dòng:")
-                            st.dataframe(rows_found[['Ngay', 'Loai', 'SoTien', 'MoTa']], use_container_width=True)
-                            indices = rows_found['Row_Index'].tolist()
-                            col_map = {"Ngay": 1, "Loai": 2, "SoTien": 3, "MoTa": 4}
-                            target_idx = col_map.get(col_target, 3)
-                            if execute_bulk_update_tc(indices, target_idx, val_new):
-                                st.success("✅ ĐÃ CẬP NHẬT THÀNH CÔNG!"); time.sleep(2); st.rerun()
-                            else: st.error("Lỗi khi cập nhật.")
-                        else: st.warning("Không tìm thấy dữ liệu.")
+        with st.expander("🛠️ CÔNG CỤ QUẢN TRỊ (ADVANCED)", expanded=False):
+            t1, t2 = st.tabs(["SỬA HÀNG LOẠT", "QUẢN LÝ NỢ"])
+            
+            with t1:
+                with st.form("bulk_edit_form"):
+                    col_search = st.selectbox("Tìm theo:", ["MoTa", "Loai", "Ngay"], index=0)
+                    kw = st.text_input("Từ khóa:")
+                    col_target = st.selectbox("Sửa cột:", ["SoTien", "Loai", "MoTa"], index=0)
+                    val_new = st.text_input("Giá trị MỚI:")
+                    if st.form_submit_button("THỰC HIỆN"):
+                        if kw and val_new:
+                            mask = df[col_search].astype(str).str.contains(kw, case=False, na=False)
+                            rows = df[mask]
+                            if not rows.empty:
+                                idxs = rows['Row_Index'].tolist()
+                                c_map = {"Ngay": 1, "Loai": 2, "SoTien": 3, "MoTa": 4}
+                                if execute_bulk_update_tc(idxs, c_map.get(col_target, 3), val_new):
+                                    st.success(f"Đã sửa {len(rows)} dòng!"); time.sleep(1); st.rerun()
+            
+            with t2:
+                cfg = load_config()
+                with st.form("debt_form"):
+                    d1_n = st.text_input("Tên Khoản 1:", value=cfg.get('debt_1_name', ''))
+                    d1_v = st.text_input("Giá trị 1:", value=cfg.get('debt_1_val', ''))
+                    d2_n = st.text_input("Tên Khoản 2:", value=cfg.get('debt_2_name', ''))
+                    d2_v = st.text_input("Giá trị 2:", value=cfg.get('debt_2_val', ''))
+                    
+                    if st.form_submit_button("LƯU CẤU HÌNH NỢ"):
+                        update_config_value('debt_1_name', d1_n)
+                        update_config_value('debt_1_val', d1_v)
+                        update_config_value('debt_2_name', d2_n)
+                        update_config_value('debt_2_val', d2_v)
+                        st.success("Đã lưu!"); time.sleep(0.5); st.rerun()
 
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
@@ -598,7 +633,6 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
-        # Full View for Viewer/Mobile
         if st.session_state.role == 'admin':
             mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
             with mt[0]: render_input_tc()
@@ -620,14 +654,12 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # GLOBAL PROJECT LOAD
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
     
     if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
     
-    # SAFE INDEX CHECK
     curr_idx = 0
     if st.session_state.curr_proj_name in p_opts:
         curr_idx = p_opts.index(st.session_state.curr_proj_name)
@@ -678,7 +710,6 @@ def render_vattu_module(is_laptop):
                     p1 = c4.number_input("Giá nhập", min_value=0.0, value=None, placeholder="0")
                 
                 with st.form("vt_add"):
-                    # RADIO FIX: SAFETY CHECK
                     unit_ops = []
                     if u1: unit_ops.append(f"{u1} (Cấp 1)")
                     if u2: unit_ops.append(f"{u2} (Cấp 2)")
@@ -709,7 +740,6 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         vp = st.session_state.curr_proj_name
         
-        # Viewer Dropdown
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -720,7 +750,6 @@ def render_vattu_module(is_laptop):
             
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
-            # Edit
             if st.session_state.role == 'admin':
                 if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                 if st.session_state.edit_vt_id:
@@ -736,7 +765,6 @@ def render_vattu_module(is_laptop):
                                 st.session_state.edit_vt_id = None; st.rerun()
                             if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
-            # SCROLL FIX
             if is_laptop:
                 with st.container(height=600): _render_vt_rows(dv)
             else:
@@ -777,9 +805,8 @@ def render_vattu_module(is_laptop):
                 excel_data = export_project_materials_excel(data_to_export, p_code, p_name)
                 st.download_button("DOWNLOAD FILE", excel_data, fname)
 
-    # LAYOUT LOGIC
+    # LAYOUT
     if is_laptop and st.session_state.role == 'admin':
-        # Admin Laptop: Split View
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_vt()
         with c2:
@@ -788,16 +815,14 @@ def render_vattu_module(is_laptop):
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
-        # Viewer or Mobile: Full View
+        mt = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
         if st.session_state.role == 'admin':
-            mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
+            mt = st.tabs(["NHẬP LIỆU", "CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
             with mt[0]: render_input_vt()
             with mt[1]: render_list_vt()
             with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
             with mt[3]: render_export_vt()
         else:
-            # Viewer: Only View Tabs
-            mt = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
             with mt[0]: render_list_vt()
             with mt[1]: st.dataframe(load_materials_master(), use_container_width=True)
             with mt[2]: render_export_vt()
