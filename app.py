@@ -61,6 +61,7 @@ st.markdown("""
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
+    /* Nút Icon Sửa/Xóa */
     div[data-testid="column"] button {
         padding: 0px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -201,38 +202,7 @@ def load_project_data():
         df['Row_Index'] = range(2, len(df) + 2)
         return df
     except: return pd.DataFrame()
-def batch_update_amount(keyword, new_amount):
-    """Cập nhật số tiền hàng loạt dựa trên từ khóa mô tả"""
-    try:
-        client = get_gs_client()
-        sheet = client.open("QuanLyThuChi").worksheet("data")
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        if df.empty: return 0
-        
-        # Tìm các dòng thỏa mãn điều kiện (Có chứa từ khóa, không phân biệt hoa thường)
-        # Lưu ý: Index trong DF bắt đầu từ 0, trong Sheet bắt đầu từ 2 (trừ header)
-        updated_count = 0
-        
-        # Duyệt qua từng dòng để update (An toàn nhất)
-        cells_to_update = []
-        
-        for i, row in df.iterrows():
-            if keyword.lower() in str(row['MoTa']).lower():
-                # Cập nhật cột SoTien (Cột 3 trong Google Sheet)
-                # Row index trong sheet = i + 2
-                cells_to_update.append(gspread.Cell(i + 2, 3, int(new_amount)))
-                updated_count += 1
-        
-        if cells_to_update:
-            sheet.update_cells(cells_to_update)
-            clear_data_cache()
-            return updated_count
-        return 0
-    except Exception as e:
-        st.error(f"Lỗi: {str(e)}")
-        return -1
+
 # --- WRITE FUNCTIONS ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
@@ -251,6 +221,20 @@ def update_transaction(row_idx, date, category, amount, description, image_link)
 def delete_transaction(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
+
+def execute_bulk_update_tc(indices, col_idx, new_value):
+    """Module sửa hàng loạt cho Thu Chi"""
+    try:
+        client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
+        cells = []
+        for idx in indices:
+            cells.append(gspread.Cell(idx, col_idx, new_value))
+        if cells:
+            sheet.update_cells(cells)
+            clear_data_cache()
+            return True
+    except: return False
+    return False
 
 def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, price_unit1, selected_unit, qty, note, is_new_item=False):
     client = get_gs_client(); wb = client.open("QuanLyThuChi")
@@ -306,7 +290,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
         fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_size': 11, 'font_name': font_name})
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'font_size': 12, 'font_name': font_name})
 
         ws = workbook.add_worksheet("SoQuy")
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
@@ -466,11 +450,9 @@ def render_thuchi_module(is_laptop):
 
     if 'edit_tc_id' not in st.session_state: st.session_state.edit_tc_id = None
 
-    # --- INPUT FORM & TOOLS ---
     def render_input_tc():
         if st.session_state.role != 'admin': return
         
-        # 1. FORM NHẬP LIỆU CHÍNH
         d_d = get_vn_time(); d_t = "Chi"; d_a = None; d_desc = ""
         is_edit = st.session_state.edit_tc_id is not None
         
@@ -491,7 +473,9 @@ def render_thuchi_module(is_laptop):
             img = st.file_uploader("Ảnh", type=['jpg','png']) if not is_edit else None
 
             btn_txt = "CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"
-            if st.form_submit_button(btn_txt):
+            submitted = st.form_submit_button(btn_txt)
+            
+            if submitted:
                 amt_val = d_amt if d_amt is not None else 0.0
                 if amt_val > 0 and d_desc:
                     if is_edit:
@@ -507,32 +491,50 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-        # 2. CÔNG CỤ CẬP NHẬT HÀNG LOẠT (MỚI)
+        # --- BULK EDITOR ---
         st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("🛠️ CẬP NHẬT GIÁ HÀNG LOẠT", expanded=False):
-            st.caption("Ví dụ: Tìm 'Công tác phí' và đổi hết thành 200.000")
-            with st.form("bulk_update_form"):
-                k_word = st.text_input("Từ khóa (trong Mô tả):", placeholder="Ví dụ: Công tác phí")
-                n_amount = st.number_input("Số tiền MỚI:", min_value=0.0, step=10000.0, format="%.0f")
+        with st.expander("🛠️ CÔNG CỤ SỬA HÀNG LOẠT (ADVANCED)", expanded=False):
+            st.info("Tìm các dòng chứa từ khóa và thay thế giá trị.")
+            with st.form("bulk_edit_form"):
+                col_search = st.selectbox("Tìm kiếm theo cột:", ["MoTa", "Loai", "Ngay"], index=0)
+                kw = st.text_input("Từ khóa tìm kiếm (Ví dụ: Công tác phí):")
                 
-                if st.form_submit_button("ÁP DỤNG THAY ĐỔI"):
-                    if k_word and n_amount > 0:
-                        count = batch_update_amount(k_word, n_amount)
-                        if count > 0:
-                            st.success(f"Đã cập nhật {count} dòng thành công!"); time.sleep(1); st.rerun()
-                        elif count == 0:
-                            st.warning("Không tìm thấy dòng nào chứa từ khóa này.")
-                    else:
-                        st.error("Vui lòng nhập từ khóa và số tiền.")
+                col_target = st.selectbox("Cột cần sửa giá trị:", ["SoTien", "Loai", "MoTa"], index=0)
+                val_new = st.text_input("Giá trị MỚI (Ví dụ: 200000):")
+                
+                if st.form_submit_button("XEM TRƯỚC & THỰC HIỆN"):
+                    if kw and val_new:
+                        # Find Rows
+                        mask = df[col_search].astype(str).str.contains(kw, case=False, na=False)
+                        rows_found = df[mask]
+                        
+                        if not rows_found.empty:
+                            st.write(f"Tìm thấy {len(rows_found)} dòng:")
+                            st.dataframe(rows_found[['Ngay', 'Loai', 'SoTien', 'MoTa']], use_container_width=True)
+                            
+                            # Execute Logic
+                            indices = rows_found['Row_Index'].tolist()
+                            
+                            # Map Col Name to Col Index (1-based in Sheet: Ngay=1, Loai=2, SoTien=3, MoTa=4)
+                            col_map = {"Ngay": 1, "Loai": 2, "SoTien": 3, "MoTa": 4}
+                            target_idx = col_map.get(col_target, 3)
+                            
+                            if execute_bulk_update_tc(indices, target_idx, val_new):
+                                st.success("✅ ĐÃ CẬP NHẬT THÀNH CÔNG! Vui lòng đợi làm mới..."); time.sleep(2); st.rerun()
+                            else:
+                                st.error("Lỗi khi cập nhật Google Sheet")
+                        else:
+                            st.warning("Không tìm thấy dữ liệu phù hợp.")
 
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
+        # FIX: HEIGHT CONDITION
         if is_laptop:
             with st.container(height=600): _render_rows(df)
         else:
-            with st.container(): _render_rows(df)
+            _render_rows(df)
 
     def _render_rows(df):
         for i, r in df.sort_values(by='Ngay', ascending=False).head(100).iterrows():
@@ -544,6 +546,7 @@ def render_thuchi_module(is_laptop):
             with c4:
                 if st.session_state.role == 'admin':
                     b1, b2 = st.columns(2)
+                    # FIX: STABLE KEYS
                     if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): 
                         st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
                     if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): 
@@ -573,6 +576,7 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
+        # Full Layout for Viewer or Mobile
         if st.session_state.role == 'admin':
             mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
             with mt[0]: render_input_tc()
@@ -594,7 +598,6 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # SHARED PROJECT LIST FOR ALL USERS
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
@@ -659,7 +662,6 @@ def render_vattu_module(is_laptop):
                     
                     def_idx = 1 if len(unit_ops) > 1 else 0
                     u_ch = st.radio("Đơn vị:", unit_ops, horizontal=True, index=def_idx)
-                    
                     c1, c2 = st.columns([1, 2])
                     qty = c1.number_input("Số lượng:", min_value=0.0, value=None, placeholder="0")
                     note = c2.text_input("Ghi chú")
@@ -682,7 +684,7 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         vp = st.session_state.curr_proj_name
         
-        # Viewer Logic: Provide dropdown if not set
+        # Viewer Logic
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -803,5 +805,3 @@ if check_password():
     with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
-
-
