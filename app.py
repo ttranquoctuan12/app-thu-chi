@@ -14,7 +14,7 @@ import string
 import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (NO SIDEBAR UI)
+# 1. CẤU HÌNH & CSS (NO SIDEBAR - FULL WIDTH)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -31,7 +31,6 @@ st.markdown("""
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
-    [data-testid="stHeaderActionElements"] { display: none !important; }
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
     footer { display: none !important; }
 
@@ -54,7 +53,7 @@ st.markdown("""
     .bal-val { font-size: 2.5rem; font-weight: 900; color: #22c55e; }
     .bal-neg { color: #ef4444 !important; }
 
-    /* 4. INPUTS & BUTTONS */
+    /* 4. UI ELEMENTS */
     .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"] {
         font-weight: 600; border-radius: 6px;
     }
@@ -147,7 +146,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 3. DATA LAYER ====================
+# ==================== 3. DATA LAYER (ROBUST) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -156,8 +155,8 @@ def load_config():
     try: sheet = wb.worksheet("config")
     except:
         sheet = wb.add_worksheet("config", 100, 2)
-        sheet.append_row(["Key", "Value"]); 
-        sheet.append_row(["admin_pwd", "admin123"]); 
+        sheet.append_row(["Key", "Value"])
+        sheet.append_row(["admin_pwd", "admin123"])
         sheet.append_row(["viewer_pwd", "xem123"])
     
     records = sheet.get_all_records()
@@ -166,7 +165,8 @@ def load_config():
     # Defaults
     if 'admin_pwd' not in config: config['admin_pwd'] = "admin123"
     if 'viewer_pwd' not in config: config['viewer_pwd'] = "xem123"
-    # Debt Defaults (Sẽ được cập nhật từ giao diện)
+    
+    # KHOẢN NỢ MẶC ĐỊNH (Theo yêu cầu)
     if 'debt_1_name' not in config: config['debt_1_name'] = "SAMSUNG S1 HN"
     if 'debt_1_val' not in config: config['debt_1_val'] = "-4000000"
     if 'debt_2_name' not in config: config['debt_2_name'] = "TẾT 2025"
@@ -175,14 +175,11 @@ def load_config():
     return config
 
 def update_config_value(key, value):
-    """Cập nhật giá trị trong sheet Config"""
     try:
         client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("config")
         cell = sheet.find(key)
-        if cell:
-            sheet.update_cell(cell.row, 2, str(value))
-        else:
-            sheet.append_row([key, str(value)])
+        if cell: sheet.update_cell(cell.row, 2, str(value))
+        else: sheet.append_row([key, str(value)])
         clear_data_cache()
         return True
     except: return False
@@ -198,10 +195,12 @@ def load_data_with_index():
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         if df.empty: return pd.DataFrame()
+        
         df['Row_Index'] = range(2, len(df) + 2)
+        # Xử lý ngày tháng thông minh (Fix lỗi mất dữ liệu khi đổi định dạng)
         df['Ngay'] = pd.to_datetime(df['Ngay'], dayfirst=True, errors='coerce')
         df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
-        df = df.dropna(subset=['Ngay'])
+        df = df.dropna(subset=['Ngay']) # Chỉ bỏ dòng lỗi ngày thực sự
         return df
     except: return pd.DataFrame()
 
@@ -296,20 +295,22 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT (DYNAMIC DEBT) ====================
+# ==================== 4. EXCEL EXPORT (FORMATTED) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     
-    # Load debt from config
+    # Load Debt info
     cfg = load_config()
-    d1_n = cfg.get('debt_1_name', "Khoản nợ 1")
-    d1_v = float(cfg.get('debt_1_val', 0))
-    d2_n = cfg.get('debt_2_name', "Khoản nợ 2")
-    d2_v = float(cfg.get('debt_2_val', 0))
+    d1_n = cfg.get('debt_1_name', "SAMSUNG S1 HN")
+    d1_v = float(cfg.get('debt_1_val', -4000000))
+    d2_n = cfg.get('debt_2_name', "TẾT 2025")
+    d2_v = float(cfg.get('debt_2_val', -5000000))
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         font_name = 'Times New Roman'
+        
+        # Styles
         fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name})
         fmt_subtitle = workbook.add_format({'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': font_name})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'italic': True})
@@ -321,13 +322,18 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
         
-        # New styles for Debt Footer
-        fmt_footer_text = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'font_color': 'black'})
-        fmt_footer_val = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bold': True})
-        fmt_footer_sum_l = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'right', 'font_name': font_name, 'border': 1})
-        fmt_footer_sum_v = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bg_color': '#FFFF00', 'border': 1})
+        # SPECIAL DEBT FORMATTING (Requested)
+        # Font: Times New Roman, Size 11, Italic, Black text, Red numbers
+        fmt_debt_text = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'font_color': 'black'})
+        fmt_debt_num = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bold': True})
+        
+        # Total Provisional Style
+        fmt_prov_label = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'center', 'font_name': font_name, 'border': 1})
+        fmt_prov_val = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bg_color': '#FFFF00', 'border': 1})
 
         ws = workbook.add_worksheet("SoQuy")
+        
+        # HEADERS
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
         ws.merge_range('A2:F2', f"Từ {start_date.strftime('%d/%m/%Y')} đến {end_date.strftime('%d/%m/%Y')}", fmt_subtitle)
         ws.merge_range('A3:F3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
@@ -338,6 +344,7 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         for c, h in enumerate(headers): ws.write(5, c, h, fmt_header)
         ws.set_column('B:B', 40); ws.set_column('C:D', 15); ws.set_column('E:F', 18)
 
+        # DATA BODY
         df_clean = df_report.reset_index(drop=True)
         start_row = 6
         for i, row in df_clean.iterrows():
@@ -351,28 +358,29 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
             
         l_row = start_row + len(df_clean)
         
-        # 1. CURRENT TOTAL
+        # TỔNG CỘNG
         ws.merge_range(l_row, 0, l_row, 4, "TỔNG CỘNG", fmt_tot_l)
         last_bal = df_clean.iloc[-1]['ConLai'] if not df_clean.empty else 0
         ws.write(l_row, 5, last_bal, fmt_tot_v)
         
-        # 2. DEBT SECTION (2 lines gap)
-        f_row = l_row + 2 
+        # --- KHOẢN NỢ / TẠM TÍNH (NEW) ---
+        # 2 empty lines
+        f_row = l_row + 3 
         
-        # Debt 1
-        ws.merge_range(f_row, 3, f_row, 4, d1_n, fmt_footer_text)
-        ws.write(f_row, 5, d1_v, fmt_footer_val)
+        # Item 1
+        ws.merge_range(f_row, 3, f_row, 4, d1_n, fmt_debt_text)
+        ws.write(f_row, 5, d1_v, fmt_debt_num)
         
-        # Debt 2
+        # Item 2
         f_row += 1
-        ws.merge_range(f_row, 3, f_row, 4, d2_n, fmt_footer_text)
-        ws.write(f_row, 5, d2_v, fmt_footer_val)
+        ws.merge_range(f_row, 3, f_row, 4, d2_n, fmt_debt_text)
+        ws.write(f_row, 5, d2_v, fmt_debt_num)
         
-        # 3. GRAND TOTAL (PROVISIONAL)
+        # TOTAL PROVISIONAL
         f_row += 1
-        total_pending = last_bal + d1_v + d2_v # Add because debts are usually negative
-        ws.merge_range(f_row, 0, f_row, 4, "TỔNG TẠM TÍNH", fmt_footer_sum_l)
-        ws.write(f_row, 5, total_pending, fmt_footer_sum_v)
+        total_pending = last_bal + d1_v + d2_v
+        ws.merge_range(f_row, 0, f_row, 4, "TỔNG TẠM TÍNH", fmt_prov_label)
+        ws.write(f_row, 5, total_pending, fmt_prov_val)
 
     return output.getvalue()
 
@@ -393,6 +401,7 @@ def export_project_materials_excel(df_proj, proj_code, proj_name):
         fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
         
         ws = workbook.add_worksheet("BangKe")
+        
         ws.merge_range('A1:G1', "BẢNG KÊ VẬT TƯ", fmt_title)
         ws.merge_range('A2:G2', f"Dự án: {proj_name}", fmt_subtitle)
         ws.merge_range('A3:G3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", fmt_info)
@@ -633,6 +642,7 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
+        # Full View for Viewer/Mobile
         if st.session_state.role == 'admin':
             mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
             with mt[0]: render_input_tc()
@@ -654,12 +664,14 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
+    # GLOBAL PROJECT LOAD
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
     
     if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
     
+    # SAFE INDEX CHECK
     curr_idx = 0
     if st.session_state.curr_proj_name in p_opts:
         curr_idx = p_opts.index(st.session_state.curr_proj_name)
@@ -710,6 +722,7 @@ def render_vattu_module(is_laptop):
                     p1 = c4.number_input("Giá nhập", min_value=0.0, value=None, placeholder="0")
                 
                 with st.form("vt_add"):
+                    # RADIO FIX: SAFETY CHECK
                     unit_ops = []
                     if u1: unit_ops.append(f"{u1} (Cấp 1)")
                     if u2: unit_ops.append(f"{u2} (Cấp 2)")
@@ -740,6 +753,7 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         vp = st.session_state.curr_proj_name
         
+        # Viewer Dropdown
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -750,6 +764,7 @@ def render_vattu_module(is_laptop):
             
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
+            # Edit
             if st.session_state.role == 'admin':
                 if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                 if st.session_state.edit_vt_id:
@@ -765,6 +780,7 @@ def render_vattu_module(is_laptop):
                                 st.session_state.edit_vt_id = None; st.rerun()
                             if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
+            # SCROLL FIX
             if is_laptop:
                 with st.container(height=600): _render_vt_rows(dv)
             else:
@@ -805,7 +821,7 @@ def render_vattu_module(is_laptop):
                 excel_data = export_project_materials_excel(data_to_export, p_code, p_name)
                 st.download_button("DOWNLOAD FILE", excel_data, fname)
 
-    # LAYOUT
+    # LAYOUT LOGIC
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_vt()
@@ -815,17 +831,18 @@ def render_vattu_module(is_laptop):
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
-        mt = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
+        # FULL VIEW
+        tabs = ["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"]
+        if st.session_state.role == 'admin': tabs = ["NHẬP LIỆU"] + tabs
+        mt = st.tabs(tabs)
+        
+        idx = 0
         if st.session_state.role == 'admin':
-            mt = st.tabs(["NHẬP LIỆU", "CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
-            with mt[0]: render_input_vt()
-            with mt[1]: render_list_vt()
-            with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
-            with mt[3]: render_export_vt()
-        else:
-            with mt[0]: render_list_vt()
-            with mt[1]: st.dataframe(load_materials_master(), use_container_width=True)
-            with mt[2]: render_export_vt()
+            with mt[0]: render_input_vt(); idx += 1
+        
+        with mt[idx]: render_list_vt()
+        with mt[idx+1]: st.dataframe(load_materials_master(), use_container_width=True)
+        with mt[idx+2]: render_export_vt()
 
 # ==================== 8. APP RUN ====================
 if check_password():
