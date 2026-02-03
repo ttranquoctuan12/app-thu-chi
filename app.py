@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 from io import BytesIO
 import unicodedata
@@ -14,7 +14,7 @@ import string
 import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS
+# 1. CẤU HÌNH & CSS (NO SIDEBAR - TOP BAR ONLY)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -25,22 +25,38 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* 1. RESET LAYOUT */
+    /* 1. RESET LAYOUT & HIDE SIDEBAR COMPLETELY */
     .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
-    [data-testid="stDecoration"], [data-testid="stToolbar"], [data-testid="stHeaderActionElements"], footer, [data-testid="stStatusWidget"] { display: none !important; }
-    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
     
-    /* Hiện lại nút Sidebar */
-    [data-testid="stSidebarCollapsedControl"] { display: block !important; }
+    /* Ẩn toàn bộ thành phần Sidebar và Header mặc định */
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stHeaderActionElements"] { display: none !important; }
+    header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
+    footer { display: none !important; }
 
-    /* 2. SYSTEM TITLE */
+    /* 2. TOP BAR STYLE */
+    .top-bar {
+        background-color: var(--secondary-background-color);
+        padding: 10px 15px;
+        border-radius: 8px;
+        border: 1px solid rgba(128,128,128,0.2);
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    /* 3. SYSTEM TITLE */
     .system-title {
         font-size: 1.5rem; font-weight: 900; text-transform: uppercase;
         color: var(--primary-color); text-align: center; margin-bottom: 20px;
         border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 10px;
     }
 
-    /* 3. BALANCE BOX */
+    /* 4. BALANCE BOX */
     .balance-box {
         background-color: var(--secondary-background-color);
         padding: 20px; border-radius: 12px;
@@ -52,7 +68,7 @@ st.markdown("""
     .bal-val { font-size: 2.5rem; font-weight: 900; color: #22c55e; }
     .bal-neg { color: #ef4444 !important; }
 
-    /* 4. UI ELEMENTS */
+    /* 5. INPUTS & BUTTONS */
     .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"] {
         font-weight: 600; border-radius: 6px;
     }
@@ -63,6 +79,7 @@ st.markdown("""
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
+    /* Nút nhỏ */
     div[data-testid="column"] button {
         padding: 0px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -70,7 +87,7 @@ st.markdown("""
     }
     div[data-testid="column"] button:hover { border-color: #ff4b4b; color: #ff4b4b; }
 
-    /* 5. TABLE STYLE */
+    /* 6. TABLE STYLE */
     .excel-header {
         background-color: var(--secondary-background-color); padding: 10px 5px;
         font-weight: 800; font-size: 0.85rem; text-transform: uppercase;
@@ -91,6 +108,7 @@ st.markdown("""
         font-weight: 800; padding: 12px; border-radius: 6px; text-align: right; margin-top: 15px; font-size: 1.1rem;
     }
 
+    /* Footer & Login */
     .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
     .login-container { display: flex; justify-content: center; margin-top: 80px; }
 </style>
@@ -150,7 +168,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 3. DATA LAYER ====================
+# ==================== 3. DATA LAYER (ROBUST RECOVERY) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -174,6 +192,7 @@ def update_password(role, new_pass):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_with_index():
+    """Tải dữ liệu Thu Chi - Chấp nhận mọi định dạng ngày"""
     try:
         client = get_gs_client()
         sheet = client.open("QuanLyThuChi").worksheet("data")
@@ -182,23 +201,21 @@ def load_data_with_index():
         
         if df.empty: return pd.DataFrame()
         
-        # Tạo chỉ số dòng dựa trên vị trí thực tế trong Sheet (Bắt đầu từ dòng 2)
+        # Gán Index theo thứ tự thực tế trong Sheet (Bắt đầu từ dòng 2)
         df['Row_Index'] = range(2, len(df) + 2)
         
-        # XỬ LÝ NGÀY THÁNG THÔNG MINH HƠN (FIX LỖI ĐỊNH DẠNG)
-        # dayfirst=True giúp đọc đúng định dạng Việt Nam (dd/mm/yyyy)
-        # errors='coerce' sẽ biến các dòng lỗi thành NaT để không gây sập app
+        # XỬ LÝ NGÀY THÔNG MINH (Chấp nhận YYYY-MM-DD và DD/MM/YYYY)
         df['Ngay'] = pd.to_datetime(df['Ngay'], dayfirst=True, errors='coerce')
         
-        # Loại bỏ các dòng bị lỗi ngày (nếu có) để tránh lỗi biểu đồ
-        df = df.dropna(subset=['Ngay'])
-        
-        # Xử lý số tiền
+        # XỬ LÝ SỐ TIỀN (Loại bỏ ký tự lạ nếu có)
         df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
+        
+        # Loại bỏ dòng rác (nếu ngày bị lỗi NaT)
+        df = df.dropna(subset=['Ngay'])
         
         return df
     except Exception as e:
-        # st.error(f"Lỗi tải dữ liệu: {e}") # Bật lên nếu muốn debug
+        # Nếu lỗi (ví dụ chưa có sheet data), trả về rỗng để ko sập app
         return pd.DataFrame()
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -239,6 +256,19 @@ def update_transaction(row_idx, date, category, amount, description, image_link)
 def delete_transaction(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
+
+def execute_bulk_update_tc(indices, col_idx, new_value):
+    try:
+        client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
+        cells = []
+        for idx in indices:
+            cells.append(gspread.Cell(idx, col_idx, new_value))
+        if cells:
+            sheet.update_cells(cells)
+            clear_data_cache()
+            return True
+    except: return False
+    return False
 
 def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, price_unit1, selected_unit, qty, note, is_new_item=False):
     client = get_gs_client(); wb = client.open("QuanLyThuChi")
@@ -437,11 +467,13 @@ def check_password():
     return True
 
 def change_password_ui():
-    with st.expander("🔐 Đổi mật khẩu"):
+    with st.expander("⚙️ CÀI ĐẶT"):
         with st.form("cp"):
             n = st.text_input("Mật khẩu mới:", type="password")
             if st.form_submit_button("Lưu"):
                 update_password(st.session_state.role, n); st.success("Xong!")
+        if st.session_state.role == 'admin':
+            if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
 # --- THU CHI UI ---
 def render_thuchi_module(is_laptop):
@@ -495,11 +527,36 @@ def render_thuchi_module(is_laptop):
         if is_edit:
             if st.button("Hủy Sửa", key="cancel_edit_tc", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
+        # BULK EDITOR
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🛠️ CÔNG CỤ SỬA HÀNG LOẠT (ADVANCED)", expanded=False):
+            st.info("Tìm các dòng chứa từ khóa và thay thế giá trị.")
+            with st.form("bulk_edit_form"):
+                col_search = st.selectbox("Tìm kiếm theo cột:", ["MoTa", "Loai", "Ngay"], index=0)
+                kw = st.text_input("Từ khóa tìm kiếm (Ví dụ: Công tác phí):")
+                
+                col_target = st.selectbox("Cột cần sửa giá trị:", ["SoTien", "Loai", "MoTa"], index=0)
+                val_new = st.text_input("Giá trị MỚI (Ví dụ: 200000):")
+                
+                if st.form_submit_button("XEM TRƯỚC & THỰC HIỆN"):
+                    if kw and val_new:
+                        mask = df[col_search].astype(str).str.contains(kw, case=False, na=False)
+                        rows_found = df[mask]
+                        if not rows_found.empty:
+                            st.write(f"Tìm thấy {len(rows_found)} dòng:")
+                            st.dataframe(rows_found[['Ngay', 'Loai', 'SoTien', 'MoTa']], use_container_width=True)
+                            indices = rows_found['Row_Index'].tolist()
+                            col_map = {"Ngay": 1, "Loai": 2, "SoTien": 3, "MoTa": 4}
+                            target_idx = col_map.get(col_target, 3)
+                            if execute_bulk_update_tc(indices, target_idx, val_new):
+                                st.success("✅ ĐÃ CẬP NHẬT THÀNH CÔNG!"); time.sleep(2); st.rerun()
+                            else: st.error("Lỗi khi cập nhật.")
+                        else: st.warning("Không tìm thấy dữ liệu.")
+
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # FIX: HEIGHT CONDITION
         if is_laptop:
             with st.container(height=600): _render_rows(df)
         else:
@@ -544,6 +601,7 @@ def render_thuchi_module(is_laptop):
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3: render_export_tc()
     else:
+        # Full View for Viewer/Mobile
         if st.session_state.role == 'admin':
             mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
             with mt[0]: render_input_tc()
@@ -565,13 +623,14 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # LOAD DATA GLOBALLY (FOR ADMIN AND VIEWER)
+    # GLOBAL PROJECT LOAD FOR ALL USERS
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
     
     if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
     
+    # SAFE INDEX
     curr_idx = 0
     if st.session_state.curr_proj_name in p_opts:
         curr_idx = p_opts.index(st.session_state.curr_proj_name)
@@ -622,7 +681,6 @@ def render_vattu_module(is_laptop):
                     p1 = c4.number_input("Giá nhập", min_value=0.0, value=None, placeholder="0")
                 
                 with st.form("vt_add"):
-                    # RADIO FIX: SAFETY CHECK
                     unit_ops = []
                     if u1: unit_ops.append(f"{u1} (Cấp 1)")
                     if u2: unit_ops.append(f"{u2} (Cấp 2)")
@@ -653,7 +711,7 @@ def render_vattu_module(is_laptop):
     def render_list_vt():
         vp = st.session_state.curr_proj_name
         
-        # VIEWER: SELECTBOX IS HERE
+        # VIEWER: SELECTBOX IF NOT SET
         if st.session_state.role != 'admin':
             vp = st.selectbox("Xem dự án:", p_opts, index=curr_idx)
 
@@ -664,7 +722,6 @@ def render_vattu_module(is_laptop):
             
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
-            # Edit
             if st.session_state.role == 'admin':
                 if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                 if st.session_state.edit_vt_id:
@@ -731,11 +788,11 @@ def render_vattu_module(is_laptop):
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
-        # FULL VIEW
+        # Full View
         tabs = ["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"]
         if st.session_state.role == 'admin': tabs = ["NHẬP LIỆU"] + tabs
-        
         mt = st.tabs(tabs)
+        
         idx = 0
         if st.session_state.role == 'admin':
             with mt[0]: render_input_vt(); idx += 1
@@ -746,28 +803,23 @@ def render_vattu_module(is_laptop):
 
 # ==================== 8. APP RUN ====================
 if check_password():
-    col_user, col_mode = st.columns([8, 2])
-    with col_user:
+    # TOP BAR (Sidebar Removed)
+    c1, c2, c3 = st.columns([6, 2, 2])
+    with c1:
         role = "ADMIN" if st.session_state.role == 'admin' else "VIEWER"
         st.markdown(f"**Xin chào: {role}**")
-    with col_mode:
+    with c2:
         is_laptop = st.toggle("💻 Laptop Mode", value=True)
+    with c3:
+        if st.button("🚪 Đăng xuất", key="logout_top"):
+            st.session_state.role = None; st.rerun()
+    
+    change_password_ui() # Show Settings Below
 
     st.divider()
-
-    with st.sidebar:
-        st.header("⚙️ CÀI ĐẶT")
-        if st.button("🚪 Đăng xuất", use_container_width=True):
-            st.session_state.role = None; st.rerun()
-            
-        change_password_ui()
-        if st.session_state.role == 'admin':
-            st.divider()
-            if st.button("🔄 Làm mới dữ liệu", use_container_width=True): clear_data_cache(); st.rerun()
 
     main_tabs = st.tabs(["💰 QUẢN LÝ THU CHI", "🏗️ VẬT TƯ & DỰ ÁN"])
     with main_tabs[0]: render_thuchi_module(is_laptop)
     with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
-
