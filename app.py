@@ -14,7 +14,7 @@ import string
 import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS (NO SIDEBAR - TOP BAR ONLY)
+# 1. CẤU HÌNH & CSS (NO SIDEBAR UI)
 # ==============================================================================
 st.set_page_config(
     page_title="HỆ THỐNG ERP",
@@ -25,10 +25,8 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* 1. RESET LAYOUT & HIDE SIDEBAR COMPLETELY */
+    /* 1. RESET LAYOUT & HIDE SIDEBAR */
     .block-container { padding-top: 1rem !important; padding-bottom: 5rem !important; }
-    
-    /* Ẩn toàn bộ thành phần Sidebar và Header mặc định */
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
     [data-testid="stDecoration"] { display: none !important; }
@@ -37,22 +35,14 @@ st.markdown("""
     header[data-testid="stHeader"] { background-color: transparent !important; z-index: 99; }
     footer { display: none !important; }
 
-    /* 2. TOP BAR STYLE */
-    .top-bar-container {
-        display: flex; justify-content: space-between; align-items: center;
-        background-color: var(--secondary-background-color);
-        padding: 10px 15px; border-radius: 8px;
-        border: 1px solid rgba(128,128,128,0.2); margin-bottom: 20px;
-    }
-
-    /* 3. SYSTEM TITLE */
+    /* 2. SYSTEM TITLE */
     .system-title {
         font-size: 1.5rem; font-weight: 900; text-transform: uppercase;
         color: var(--primary-color); text-align: center; margin-bottom: 20px;
         border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 10px;
     }
 
-    /* 4. BALANCE BOX */
+    /* 3. BALANCE BOX */
     .balance-box {
         background-color: var(--secondary-background-color);
         padding: 20px; border-radius: 12px;
@@ -64,7 +54,7 @@ st.markdown("""
     .bal-val { font-size: 2.5rem; font-weight: 900; color: #22c55e; }
     .bal-neg { color: #ef4444 !important; }
 
-    /* 5. INPUTS & BUTTONS */
+    /* 4. INPUTS & BUTTONS */
     .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"] {
         font-weight: 600; border-radius: 6px;
     }
@@ -75,7 +65,7 @@ st.markdown("""
     }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
-    /* Nút nhỏ */
+    /* Small Buttons */
     div[data-testid="column"] button {
         padding: 0px 8px !important; min-height: 32px !important; height: auto !important;
         font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3);
@@ -83,7 +73,7 @@ st.markdown("""
     }
     div[data-testid="column"] button:hover { border-color: #ff4b4b; color: #ff4b4b; }
 
-    /* 6. TABLE STYLE */
+    /* 5. TABLE STYLE */
     .excel-header {
         background-color: var(--secondary-background-color); padding: 10px 5px;
         font-weight: 800; font-size: 0.85rem; text-transform: uppercase;
@@ -98,15 +88,8 @@ st.markdown("""
     
     .money-inc { color: #22c55e !important; font-weight: 800; font-family: 'Consolas', monospace; }
     .money-exp { color: #ef4444 !important; font-weight: 800; font-family: 'Consolas', monospace; }
-    
-    .total-row {
-        background-color: rgba(255, 165, 0, 0.15); color: #d97706; border: 1px solid #d97706;
-        font-weight: 800; padding: 12px; border-radius: 6px; text-align: right; margin-top: 15px; font-size: 1.1rem;
-    }
 
-    /* Footer & Login */
     .app-footer { text-align: center; margin-top: 50px; padding-top: 10px; border-top: 1px dashed rgba(128,128,128,0.3); opacity: 0.6; font-size: 0.75rem; font-style: italic; }
-    .login-container { display: flex; justify-content: center; margin-top: 80px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -164,7 +147,7 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# ==================== 3. DATA LAYER (ROBUST RECOVERY) ====================
+# ==================== 3. DATA LAYER (ROBUST) ====================
 def clear_data_cache(): st.cache_data.clear()
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -188,31 +171,19 @@ def update_password(role, new_pass):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_with_index():
-    """Tải dữ liệu Thu Chi - Chấp nhận mọi định dạng ngày"""
     try:
         client = get_gs_client()
         sheet = client.open("QuanLyThuChi").worksheet("data")
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        
         if df.empty: return pd.DataFrame()
-        
-        # Gán Index theo thứ tự thực tế trong Sheet (Bắt đầu từ dòng 2)
         df['Row_Index'] = range(2, len(df) + 2)
-        
-        # XỬ LÝ NGÀY THÔNG MINH (Chấp nhận YYYY-MM-DD và DD/MM/YYYY)
+        # Parse dates robustly
         df['Ngay'] = pd.to_datetime(df['Ngay'], dayfirst=True, errors='coerce')
-        
-        # XỬ LÝ SỐ TIỀN (Loại bỏ ký tự lạ nếu có)
         df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
-        
-        # Loại bỏ dòng rác (nếu ngày bị lỗi NaT)
         df = df.dropna(subset=['Ngay'])
-        
         return df
-    except Exception as e:
-        # Nếu lỗi (ví dụ chưa có sheet data), trả về rỗng để ko sập app
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_materials_master():
@@ -305,12 +276,15 @@ def delete_material_row(row_idx):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data_duan")
     sheet.delete_rows(int(row_idx)); clear_data_cache()
 
-# ==================== 4. EXCEL EXPORT ====================
+# ==================== 4. EXCEL EXPORT (UPDATED FOOTER) ====================
 def convert_df_to_excel_custom(df_report, start_date, end_date):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
+        # FONT
         font_name = 'Times New Roman'
+        
+        # STYLES
         fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name})
         fmt_subtitle = workbook.add_format({'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'italic': True, 'font_name': font_name})
         fmt_info = workbook.add_format({'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': font_name, 'italic': True})
@@ -320,7 +294,13 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
         fmt_cell = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': font_name})
         fmt_num = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0', 'font_size': 11, 'font_name': font_name})
         fmt_tot_l = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFF00', 'align': 'center', 'font_size': 12, 'font_name': font_name})
-        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': font_name, 'font_size': 12})
+        fmt_tot_v = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'font_size': 12, 'font_name': font_name})
+        
+        # NEW FOOTER STYLES
+        fmt_footer_text = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'font_color': 'black'})
+        fmt_footer_val = workbook.add_format({'font_size': 11, 'italic': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bold': True})
+        fmt_footer_sum_l = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'right', 'font_name': font_name, 'border': 1})
+        fmt_footer_sum_v = workbook.add_format({'font_size': 11, 'bold': True, 'align': 'right', 'font_name': font_name, 'num_format': '#,##0', 'font_color': 'red', 'bg_color': '#FFFF00', 'border': 1})
 
         ws = workbook.add_worksheet("SoQuy")
         ws.merge_range('A1:F1', "QUYẾT TOÁN", fmt_title)
@@ -346,7 +326,28 @@ def convert_df_to_excel_custom(df_report, start_date, end_date):
             
         l_row = start_row + len(df_clean)
         ws.merge_range(l_row, 0, l_row, 4, "TỔNG CỘNG", fmt_tot_l)
-        ws.write(l_row, 5, df_clean.iloc[-1]['ConLai'] if not df_clean.empty else 0, fmt_tot_v)
+        last_bal = df_clean.iloc[-1]['ConLai'] if not df_clean.empty else 0
+        ws.write(l_row, 5, last_bal, fmt_tot_v)
+        
+        # --- NEW SECTION: TẠM TÍNH / NỢ ---
+        # 2 lines gap
+        f_row = l_row + 2 
+        
+        # ITEM 1
+        ws.merge_range(f_row, 3, f_row, 4, "SAMSUNG S1 HN", fmt_footer_text)
+        ws.write(f_row, 5, -4000000, fmt_footer_val)
+        
+        # ITEM 2
+        f_row += 1
+        ws.merge_range(f_row, 3, f_row, 4, "TẾT 2025", fmt_footer_text)
+        ws.write(f_row, 5, -5000000, fmt_footer_val)
+        
+        # SUM
+        f_row += 1
+        total_pending = last_bal - 4000000 - 5000000
+        ws.merge_range(f_row, 0, f_row, 4, "TỔNG TẠM TÍNH", fmt_footer_sum_l)
+        ws.write(f_row, 5, total_pending, fmt_footer_sum_v)
+
     return output.getvalue()
 
 def export_project_materials_excel(df_proj, proj_code, proj_name):
@@ -619,14 +620,14 @@ def render_thuchi_module(is_laptop):
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
     
-    # SHARED PROJECT LIST
+    # GLOBAL PROJECT LOAD
     df_pj = load_project_data()
     ex = df_pj['TenDuAn'].unique().tolist() if not df_pj.empty else []
     p_opts = ["++ TẠO DỰ ÁN MỚI ++"] + list(reversed(ex))
     
     if 'curr_proj_name' not in st.session_state: st.session_state.curr_proj_name = ""
     
-    # SAFE INDEX
+    # SAFE INDEX CHECK
     curr_idx = 0
     if st.session_state.curr_proj_name in p_opts:
         curr_idx = p_opts.index(st.session_state.curr_proj_name)
@@ -677,6 +678,7 @@ def render_vattu_module(is_laptop):
                     p1 = c4.number_input("Giá nhập", min_value=0.0, value=None, placeholder="0")
                 
                 with st.form("vt_add"):
+                    # RADIO FIX: SAFETY CHECK
                     unit_ops = []
                     if u1: unit_ops.append(f"{u1} (Cấp 1)")
                     if u2: unit_ops.append(f"{u2} (Cấp 2)")
@@ -777,6 +779,7 @@ def render_vattu_module(is_laptop):
 
     # LAYOUT LOGIC
     if is_laptop and st.session_state.role == 'admin':
+        # Admin Laptop: Split View
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_vt()
         with c2:
@@ -785,18 +788,19 @@ def render_vattu_module(is_laptop):
             with t2: st.dataframe(load_materials_master(), use_container_width=True)
             with t3: render_export_vt()
     else:
-        # Full View
-        tabs = ["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"]
-        if st.session_state.role == 'admin': tabs = ["NHẬP LIỆU"] + tabs
-        mt = st.tabs(tabs)
-        
-        idx = 0
+        # Viewer or Mobile: Full View
         if st.session_state.role == 'admin':
-            with mt[0]: render_input_vt(); idx += 1
-        
-        with mt[idx]: render_list_vt()
-        with mt[idx+1]: st.dataframe(load_materials_master(), use_container_width=True)
-        with mt[idx+2]: render_export_vt()
+            mt = st.tabs(["NHẬP", "CHI TIẾT", "KHO", "XUẤT"])
+            with mt[0]: render_input_vt()
+            with mt[1]: render_list_vt()
+            with mt[2]: st.dataframe(load_materials_master(), use_container_width=True)
+            with mt[3]: render_export_vt()
+        else:
+            # Viewer: Only View Tabs
+            mt = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
+            with mt[0]: render_list_vt()
+            with mt[1]: st.dataframe(load_materials_master(), use_container_width=True)
+            with mt[2]: render_export_vt()
 
 # ==================== 8. APP RUN ====================
 if check_password():
