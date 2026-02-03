@@ -201,7 +201,38 @@ def load_project_data():
         df['Row_Index'] = range(2, len(df) + 2)
         return df
     except: return pd.DataFrame()
-
+def batch_update_amount(keyword, new_amount):
+    """Cập nhật số tiền hàng loạt dựa trên từ khóa mô tả"""
+    try:
+        client = get_gs_client()
+        sheet = client.open("QuanLyThuChi").worksheet("data")
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        
+        if df.empty: return 0
+        
+        # Tìm các dòng thỏa mãn điều kiện (Có chứa từ khóa, không phân biệt hoa thường)
+        # Lưu ý: Index trong DF bắt đầu từ 0, trong Sheet bắt đầu từ 2 (trừ header)
+        updated_count = 0
+        
+        # Duyệt qua từng dòng để update (An toàn nhất)
+        cells_to_update = []
+        
+        for i, row in df.iterrows():
+            if keyword.lower() in str(row['MoTa']).lower():
+                # Cập nhật cột SoTien (Cột 3 trong Google Sheet)
+                # Row index trong sheet = i + 2
+                cells_to_update.append(gspread.Cell(i + 2, 3, int(new_amount)))
+                updated_count += 1
+        
+        if cells_to_update:
+            sheet.update_cells(cells_to_update)
+            clear_data_cache()
+            return updated_count
+        return 0
+    except Exception as e:
+        st.error(f"Lỗi: {str(e)}")
+        return -1
 # --- WRITE FUNCTIONS ---
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
@@ -762,3 +793,4 @@ if check_password():
     with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+
