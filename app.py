@@ -174,17 +174,31 @@ def update_password(role, new_pass):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_data_with_index():
-    # Load Thu Chi
     try:
-        client = get_gs_client(); sheet = client.open("QuanLyThuChi").worksheet("data")
-        data = sheet.get_all_records(); df = pd.DataFrame(data)
+        client = get_gs_client()
+        sheet = client.open("QuanLyThuChi").worksheet("data")
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        
         if df.empty: return pd.DataFrame()
+        
+        # Tạo chỉ số dòng dựa trên vị trí thực tế trong Sheet (Bắt đầu từ dòng 2)
         df['Row_Index'] = range(2, len(df) + 2)
-        df['Ngay'] = pd.to_datetime(df['Ngay'], errors='coerce')
+        
+        # XỬ LÝ NGÀY THÁNG THÔNG MINH HƠN (FIX LỖI ĐỊNH DẠNG)
+        # dayfirst=True giúp đọc đúng định dạng Việt Nam (dd/mm/yyyy)
+        # errors='coerce' sẽ biến các dòng lỗi thành NaT để không gây sập app
+        df['Ngay'] = pd.to_datetime(df['Ngay'], dayfirst=True, errors='coerce')
+        
+        # Loại bỏ các dòng bị lỗi ngày (nếu có) để tránh lỗi biểu đồ
+        df = df.dropna(subset=['Ngay'])
+        
+        # Xử lý số tiền
         df['SoTien'] = pd.to_numeric(df['SoTien'], errors='coerce').fillna(0).astype('float')
+        
         return df
-    except Exception as e: 
-        # st.error(f"Lỗi tải dữ liệu Thu Chi: {e}"); 
+    except Exception as e:
+        # st.error(f"Lỗi tải dữ liệu: {e}") # Bật lên nếu muốn debug
         return pd.DataFrame()
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -756,3 +770,4 @@ if check_password():
     with main_tabs[1]: render_vattu_module(is_laptop)
 
     st.markdown("<div class='app-footer'>Powered by TUẤN VDS.HCM</div>", unsafe_allow_html=True)
+
