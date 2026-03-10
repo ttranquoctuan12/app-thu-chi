@@ -11,7 +11,6 @@ import unicodedata
 import pytz
 import random
 import string
-import difflib
 
 # ==============================================================================
 # 1. CẤU HÌNH & CSS 
@@ -346,6 +345,12 @@ def check_password():
         return False
     return True
 
+def change_password_ui():
+    with st.form("cp"):
+        n = st.text_input("Mật khẩu mới:", type="password")
+        if st.form_submit_button("Đổi mật khẩu"):
+            update_password(st.session_state.role, n); st.success("Xong!")
+
 # --- THU CHI UI ---
 def render_thuchi_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUYẾT TOÁN</div>", unsafe_allow_html=True)
@@ -370,20 +375,44 @@ def render_thuchi_module(is_laptop):
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
             
-            d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=d_a, placeholder="0")
-            d_desc = st.text_input("Mô tả", value=d_desc)
+            suggested_cats = [""] + list(df['MoTa'].unique()) if not df.empty else [""]
+            col_desc1, col_desc2 = st.columns([1, 2])
+            d_desc_sel = col_desc1.selectbox("Danh mục cũ", suggested_cats)
+            d_desc_txt = col_desc2.text_input("Hoặc nhập mới", value=d_desc)
+            final_desc = d_desc_txt if d_desc_txt else d_desc_sel
+            
+            # FORMAT INTEGER CHO SỐ TIỀN THU CHI
+            d_a_int = int(d_a) if d_a is not None else None
+            d_amt = st.number_input("Số tiền (VNĐ)", min_value=0, step=1000, value=d_a_int, format="%d")
+            if d_amt: st.caption(f"💰 **{format_vnd(d_amt)} VNĐ**") # Hiển thị phân cách hàng nghìn
+            
             img = st.file_uploader("Ảnh (Không bắt buộc)", type=['jpg','png']) if not is_edit else None
 
             if st.form_submit_button("CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"):
-                if (d_amt is not None and d_amt > 0) and d_desc:
+                if (d_amt is not None and d_amt > 0) and final_desc:
                     if is_edit:
-                        update_transaction(st.session_state.edit_tc_id, d_date, d_type, d_amt, d_desc, "")
+                        update_transaction(st.session_state.edit_tc_id, d_date, d_type, d_amt, final_desc, "")
                         st.session_state.edit_tc_id = None; st.success("Đã sửa!"); time.sleep(0.5); st.rerun()
                     else:
-                        add_transaction(d_date, d_type, d_amt, d_desc, upload_image_to_drive(img, f"TC_{d_date}") if img else "")
+                        add_transaction(d_date, d_type, d_amt, final_desc, upload_image_to_drive(img, f"TC_{d_date}") if img else "")
                         st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
                 else: st.warning("Nhập thiếu thông tin!")
         if is_edit and st.button("Hủy Sửa", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🛠️ CẤU HÌNH KHOẢN NỢ TẠM TÍNH", expanded=False):
+            cfg = load_config()
+            with st.form("debt_form"):
+                st.caption("Các khoản này sẽ xuất hiện ở dưới cùng của file Excel.")
+                d1_n = st.text_input("Tên Khoản 1:", value=cfg.get('debt_1_name', ''))
+                d1_v = st.text_input("Giá trị 1 (Ghi số âm, vd: -4000000):", value=cfg.get('debt_1_val', ''))
+                d2_n = st.text_input("Tên Khoản 2:", value=cfg.get('debt_2_name', ''))
+                d2_v = st.text_input("Giá trị 2:", value=cfg.get('debt_2_val', ''))
+                
+                if st.form_submit_button("LƯU CẤU HÌNH"):
+                    update_config_value('debt_1_name', d1_n); update_config_value('debt_1_val', d1_v)
+                    update_config_value('debt_2_name', d2_n); update_config_value('debt_2_val', d2_v)
+                    st.success("Đã lưu!"); time.sleep(0.5); st.rerun()
 
     def _render_tc_items(data_frame):
         for i, r in data_frame.iterrows():
@@ -417,7 +446,6 @@ def render_thuchi_module(is_laptop):
                 st.download_button("DOWNLOAD FILE", convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2), f"Quyet_Toan_{get_vn_time().strftime('%d%m%Y')}.xlsx")
         else: st.warning("Không có dữ liệu")
 
-    # LAYOUT: Tăng tỷ lệ cột bên trái từ 3.5 lên 4.0 để form rộng rãi hơn
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([4, 6]) 
         with c1: render_input_tc()
@@ -479,7 +507,7 @@ def render_vattu_module(is_laptop):
                     ratio = c3.number_input("Quy đổi", 1.0)
                     suggested_price = None
                 else:
-                    suggested_price = float(p1) if p1 else None
+                    suggested_price = int(p1) if p1 else None
                 
                 with st.form("vt_add"):
                     u_opts = []
@@ -487,10 +515,13 @@ def render_vattu_module(is_laptop):
                     if u2: u_opts.append(f"{u2} (Cấp 2)")
                     u_ch = st.radio("Đơn vị:", u_opts if u_opts else ["Mặc định"], horizontal=True)
                     
-                    # UI FIX: Xếp chồng (Stacking) các cột thành 2 hàng để tránh bị che chữ
+                    # FIX UI: XẾP CHỒNG 2 HÀNG ĐỂ KHÔNG BỊ CHE KHUẤT
                     col_q, col_p = st.columns(2)
                     qty = col_q.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
-                    input_price = col_p.number_input("Đơn giá", min_value=0.0, value=suggested_price, step=1000.0)
+                    
+                    # FORMAT INTEGER CHO GIÁ VẬT TƯ
+                    input_price = col_p.number_input("Đơn giá (VNĐ)", min_value=0, value=suggested_price, step=1000, format="%d")
+                    if input_price: col_p.caption(f"💰 **{format_vnd(input_price)} VNĐ**") # Phân cách hàng nghìn
                     
                     note = st.text_input("Ghi chú (Tùy chọn)")
                     link_ncc = st.text_input("Link/Nhà Cung Cấp (Tùy chọn)")
@@ -532,7 +563,10 @@ def render_vattu_module(is_laptop):
                         st.info(f"Sửa: {re['TenVT']}")
                         c1, c2 = st.columns(2)
                         nq = c1.number_input("SL mới:", value=float(re['SoLuong']))
-                        np = c2.number_input("Đơn giá mới:", value=float(re['DonGia']))
+                        # FORMAT INTEGER KHI SỬA GIÁ
+                        np = c2.number_input("Đơn giá mới:", value=int(re['DonGia']), step=1000, format="%d")
+                        if np: c2.caption(f"💰 **{format_vnd(np)} VNĐ**")
+                        
                         nn = st.text_input("Ghi chú:", value=re['GhiChu'])
                         if st.form_submit_button("CẬP NHẬT"): update_material_row(st.session_state.edit_vt_id, nq, np, nn); st.session_state.edit_vt_id = None; st.rerun()
                         if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
@@ -571,7 +605,10 @@ def render_vattu_module(is_laptop):
                 c1, c2, c3, c4 = st.columns(4)
                 nu1 = c1.text_input("ĐVT Lớn", re['DVT_Cap1']); nu2 = c2.text_input("ĐVT Nhỏ", re['DVT_Cap2'])
                 nrat = c3.number_input("Quy đổi", value=float(re.get('QuyDoi',1)))
-                npri = c4.number_input("Giá chuẩn", value=float(re.get('DonGia_Cap1',0)))
+                
+                # FORMAT INTEGER CHO GIÁ CHUẨN TRONG KHO
+                npri = c4.number_input("Giá chuẩn", value=int(re.get('DonGia_Cap1',0)), step=1000, format="%d")
+                
                 b1, b2 = st.columns(2)
                 if b1.form_submit_button("💾 LƯU KHO"): update_master_material(st.session_state.edit_m_id, n_name, nu1, nu2, nrat, npri); st.session_state.edit_m_id = None; st.rerun()
                 if b2.form_submit_button("❌ HỦY"): st.session_state.edit_m_id = None; st.rerun()
@@ -595,7 +632,6 @@ def render_vattu_module(is_laptop):
                 data = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'}) if xp == "TẤT CẢ" else df_pj[df_pj['TenDuAn'] == xp]
                 st.download_button("DOWNLOAD FILE", export_project_materials_excel(data, xp), f"VatTu_{xp}.xlsx")
 
-    # LAYOUT: Tăng tỷ lệ cột bên trái từ 3.5 lên 4.0 
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([4, 6]) 
         with c1: render_input_vt()
@@ -623,9 +659,7 @@ if check_password():
     with c3:
         if st.session_state.role == 'admin':
             with st.expander("⚙️ CÀI ĐẶT & BACKUP", expanded=False):
-                with st.form("cp"):
-                    n = st.text_input("Mật khẩu mới:", type="password")
-                    if st.form_submit_button("Đổi mật khẩu"): update_password(st.session_state.role, n); st.success("Xong!")
+                change_password_ui()
                 st.divider()
                 if st.button("🔄 LÀM MỚI APP", use_container_width=True): clear_data_cache(); st.rerun()
                 if st.download_button("📥 TẢI BACKUP", data=generate_full_backup(), file_name=f"Backup_ERP_{get_vn_time().strftime('%d%m%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True): pass
