@@ -156,25 +156,28 @@ def update_transaction(row_idx, date, category, amount, description, image_link)
 def delete_transaction(sheet_name, row_idx):
     get_gs_client().open("QuanLyThuChi").worksheet(sheet_name).delete_rows(int(row_idx)); clear_data_cache()
 
-def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, price_unit1, selected_unit, qty, note, link_ncc, is_new_item=False):
+# CẬP NHẬT LOGIC LƯU GIÁ VẬT TƯ
+def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, user_input_price, selected_unit, qty, note, link_ncc, is_new_item=False):
     wb = get_gs_client().open("QuanLyThuChi")
     mat_code = ""
     proj_name = auto_capitalize(proj_name); mat_name = auto_capitalize(mat_name)
+    
+    # Giá lưu vào dự án là giá do User nhập trên form
+    final_price = float(user_input_price)
+    thanh_tien = float(qty) * final_price
     
     if is_new_item:
         try: ws_master = wb.worksheet("dm_vattu")
         except: ws_master = wb.add_worksheet("dm_vattu", 1000, 6); ws_master.append_row(["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
         mat_code = generate_material_code(mat_name)
-        ws_master.append_row([mat_code, mat_name, auto_capitalize(unit1), auto_capitalize(unit2), ratio, price_unit1])
+        # Tính ngược lại giá Cấp 1 để lưu vào kho chuẩn
+        master_price = final_price if selected_unit == unit1 else final_price * float(ratio)
+        ws_master.append_row([mat_code, mat_name, auto_capitalize(unit1), auto_capitalize(unit2), ratio, master_price])
     else:
         df_master = load_materials_master()
         if not df_master.empty:
             found = df_master[df_master['TenVT'] == mat_name]
             if not found.empty: mat_code = found.iloc[0]['MaVT']
-    
-    # Giá cuối cùng = (Giá Cấp 1) / Ratio nếu chọn ĐVT Cấp 2, ngược lại = Giá cấp 1
-    final_price = float(price_unit1) if selected_unit == unit1 else (float(price_unit1) / float(ratio) if float(ratio) > 0 else 0)
-    thanh_tien = float(qty) * final_price
     
     try: ws_data = wb.worksheet("data_duan")
     except: ws_data = wb.add_worksheet("data_duan", 1000, 11); ws_data.append_row(["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu", "LinkNCC"])
@@ -420,8 +423,7 @@ def render_thuchi_module(is_laptop):
 
         if is_laptop:
             with st.container(height=600): _render_tc_items(df_paged)
-        else:
-            _render_tc_items(df_paged)
+        else: _render_tc_items(df_paged)
 
     def render_export_tc():
         if not df.empty:
@@ -444,7 +446,8 @@ def render_thuchi_module(is_laptop):
         if st.session_state.role == 'admin':
             with mt[0]: render_input_tc(); idx += 1
         with mt[idx]: render_list_tc()
-        with mt[idx+1]: st.dataframe(process_report_data(df, st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1"), st.date_input("Đến", get_vn_time(), key="m_d2")), use_container_width=True)
+        with mt[idx+1]: 
+            st.dataframe(process_report_data(df, st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1"), st.date_input("Đến", get_vn_time(), key="m_d2")), use_container_width=True)
         with mt[idx+2]: render_export_tc()
 
 def render_vattu_module(is_laptop):
@@ -467,29 +470,32 @@ def render_vattu_module(is_laptop):
             vt_final = st.text_input("Tên vật tư mới:") if is_new else sel_vt
             u1, u2, ratio, p1 = "", "", 1.0, 0.0
             
+            # SMART PRICING LOGIC
             if not is_new and sel_vt and not df_m.empty:
                 r = df_m[df_m['TenVT'] == sel_vt].iloc[0]
                 u1, u2 = str(r.get('DVT_Cap1','')), str(r.get('DVT_Cap2',''))
                 try: ratio, p1 = float(r.get('QuyDoi',1)), float(r.get('DonGia_Cap1',0))
                 except: pass
                 
-                # --- LOGIC MỚI: TỰ ĐỘNG ĐIỀN GIÁ GẦN NHẤT CỦA DỰ ÁN ĐANG CHỌN ---
+                # Check history in current project
                 if not df_pj.empty:
                     hist = df_pj[(df_pj['TenDuAn'] == st.session_state.curr_proj_name) & (df_pj['TenVT'] == sel_vt)]
                     if not hist.empty:
                         last_entry = hist.iloc[-1]
                         hist_price = float(last_entry['DonGia'])
                         hist_unit = str(last_entry['DVT'])
-                        # Tính ngược lại giá của Đơn vị 1 (Giá nhập)
                         if hist_unit == u1: p1 = hist_price
                         elif hist_unit == u2 and ratio > 0: p1 = hist_price * ratio
                         else: p1 = hist_price
 
             if vt_final:
                 if is_new:
-                    c1, c2, c3, c4 = st.columns(4)
-                    u1, u2 = c1.text_input("ĐVT Lớn"), c2.text_input("ĐVT Nhỏ")
-                    ratio, p1 = c3.number_input("Quy đổi", 1.0), c4.number_input("Giá nhập", min_value=0.0, value=None)
+                    c1, c2, c3 = st.columns(3)
+                    u1, u2 = c1.text_input("ĐVT Lớn (Cấp 1)"), c2.text_input("ĐVT Nhỏ (Cấp 2)")
+                    ratio = c3.number_input("Quy đổi", 1.0)
+                    suggested_price = None
+                else:
+                    suggested_price = float(p1) if p1 else None
                 
                 with st.form("vt_add"):
                     u_opts = []
@@ -497,16 +503,20 @@ def render_vattu_module(is_laptop):
                     if u2: u_opts.append(f"{u2} (Cấp 2)")
                     u_ch = st.radio("Đơn vị:", u_opts if u_opts else ["Mặc định"], horizontal=True)
                     
-                    c1, c2, c3 = st.columns([1, 1.5, 1.5])
+                    # NEW LAYOUT: PRICE INPUT INSIDE FORM
+                    c1, c2, c3, c4 = st.columns([1, 1.5, 2, 2])
                     qty = c1.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
-                    note = c2.text_input("Ghi chú")
-                    link_ncc = c3.text_input("Link/Nhà Cung Cấp")
+                    input_price = c2.number_input("Đơn giá", min_value=0.0, value=suggested_price, step=1000.0)
+                    note = c3.text_input("Ghi chú")
+                    link_ncc = c4.text_input("Link/Nhà Cung Cấp")
                     
                     if st.form_submit_button("➕ THÊM VÀO DỰ ÁN"):
-                        if qty is not None and qty > 0:
+                        if qty is not None and qty > 0 and input_price is not None:
                             pc = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name].iloc[0]['MaDuAn'] if sel_p != "++ TẠO DỰ ÁN MỚI ++" and not df_pj.empty else generate_project_code(st.session_state.curr_proj_name)
-                            save_project_material(pc, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1 if p1 else 0, u_ch.split(" (")[0] if "(" in u_ch else u_ch, qty, note, link_ncc, is_new)
+                            save_project_material(pc, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, input_price, u_ch.split(" (")[0] if "(" in u_ch else u_ch, qty, note, link_ncc, is_new)
                             st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
+                        else:
+                            st.warning("Vui lòng nhập số lượng và đơn giá!")
 
     def _render_vt_items(data_frame):
         for i, r in data_frame.iterrows():
