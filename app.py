@@ -381,10 +381,9 @@ def render_thuchi_module(is_laptop):
             d_desc_txt = col_desc2.text_input("Hoặc nhập mới", value=d_desc)
             final_desc = d_desc_txt if d_desc_txt else d_desc_sel
             
-            # FORMAT INTEGER CHO SỐ TIỀN THU CHI
             d_a_int = int(d_a) if d_a is not None else None
             d_amt = st.number_input("Số tiền (VNĐ)", min_value=0, step=1000, value=d_a_int, format="%d")
-            if d_amt: st.caption(f"💰 **{format_vnd(d_amt)} VNĐ**") # Hiển thị phân cách hàng nghìn
+            if d_amt: st.caption(f"💰 **{format_vnd(d_amt)} VNĐ**")
             
             img = st.file_uploader("Ảnh (Không bắt buộc)", type=['jpg','png']) if not is_edit else None
 
@@ -515,13 +514,10 @@ def render_vattu_module(is_laptop):
                     if u2: u_opts.append(f"{u2} (Cấp 2)")
                     u_ch = st.radio("Đơn vị:", u_opts if u_opts else ["Mặc định"], horizontal=True)
                     
-                    # FIX UI: XẾP CHỒNG 2 HÀNG ĐỂ KHÔNG BỊ CHE KHUẤT
                     col_q, col_p = st.columns(2)
                     qty = col_q.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
-                    
-                    # FORMAT INTEGER CHO GIÁ VẬT TƯ
                     input_price = col_p.number_input("Đơn giá (VNĐ)", min_value=0, value=suggested_price, step=1000, format="%d")
-                    if input_price: col_p.caption(f"💰 **{format_vnd(input_price)} VNĐ**") # Phân cách hàng nghìn
+                    if input_price: col_p.caption(f"💰 **{format_vnd(input_price)} VNĐ**")
                     
                     note = st.text_input("Ghi chú (Tùy chọn)")
                     link_ncc = st.text_input("Link/Nhà Cung Cấp (Tùy chọn)")
@@ -537,10 +533,36 @@ def render_vattu_module(is_laptop):
     def _render_vt_items(data_frame):
         for i, r in data_frame.iterrows():
             c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
-            ncc_text = f" | NCC: {r.get('LinkNCC', '')}" if str(r.get('LinkNCC', '')) else ""
-            c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}{ncc_text}</div>", unsafe_allow_html=True)
-            c2.write(f"{r['SoLuong']}")
-            c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
+            
+            # --- LOGIC THU GỌN GHI CHÚ VÀ CHUYỂN ĐỔI LINK THÔNG MINH ---
+            sub_info = [f"ĐVT: <b>{r['DVT']}</b>"]
+            
+            # Xử lý Note (Ghi chú)
+            note_str = str(r['GhiChu']).strip()
+            if note_str:
+                if note_str.startswith("http"):
+                    sub_info.append(f"<a href='{note_str}' target='_blank' style='color:#3b82f6; text-decoration:none;'>🔗 Link Ghi Chú</a>")
+                else:
+                    short_note = note_str if len(note_str) <= 30 else note_str[:27] + "..."
+                    sub_info.append(f"<span title='{note_str}'>{short_note}</span>")
+            
+            # Xử lý Link NCC
+            link_str = str(r.get('LinkNCC', '')).strip()
+            if link_str:
+                if link_str.startswith("http") or link_str.startswith("www"):
+                    href = link_str if link_str.startswith("http") else "https://" + link_str
+                    sub_info.append(f"<a href='{href}' target='_blank' style='color:#10b981; text-decoration:none; font-weight:bold;'>🛒 Link SP</a>")
+                else:
+                    short_ncc = link_str if len(link_str) <= 20 else link_str[:17] + "..."
+                    sub_info.append(f"<span title='{link_str}'>NCC: {short_ncc}</span>")
+            
+            sub_text = " | ".join(sub_info)
+            
+            # RENDER HTML
+            c1.markdown(f"<div class='cell-main' style='font-size:0.95rem; font-weight:bold;'>{r['TenVT']}</div><div class='cell-sub' style='font-size:0.8rem; color:gray;'>{sub_text}</div>", unsafe_allow_html=True)
+            c2.markdown(f"<div style='margin-top:8px;'>{r['SoLuong']}</div>", unsafe_allow_html=True)
+            c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important;margin-top:8px;'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
+            
             with c4:
                 if st.session_state.role == 'admin':
                     b1, b2 = st.columns(2)
@@ -563,7 +585,6 @@ def render_vattu_module(is_laptop):
                         st.info(f"Sửa: {re['TenVT']}")
                         c1, c2 = st.columns(2)
                         nq = c1.number_input("SL mới:", value=float(re['SoLuong']))
-                        # FORMAT INTEGER KHI SỬA GIÁ
                         np = c2.number_input("Đơn giá mới:", value=int(re['DonGia']), step=1000, format="%d")
                         if np: c2.caption(f"💰 **{format_vnd(np)} VNĐ**")
                         
@@ -605,10 +626,7 @@ def render_vattu_module(is_laptop):
                 c1, c2, c3, c4 = st.columns(4)
                 nu1 = c1.text_input("ĐVT Lớn", re['DVT_Cap1']); nu2 = c2.text_input("ĐVT Nhỏ", re['DVT_Cap2'])
                 nrat = c3.number_input("Quy đổi", value=float(re.get('QuyDoi',1)))
-                
-                # FORMAT INTEGER CHO GIÁ CHUẨN TRONG KHO
                 npri = c4.number_input("Giá chuẩn", value=int(re.get('DonGia_Cap1',0)), step=1000, format="%d")
-                
                 b1, b2 = st.columns(2)
                 if b1.form_submit_button("💾 LƯU KHO"): update_master_material(st.session_state.edit_m_id, n_name, nu1, nu2, nrat, npri); st.session_state.edit_m_id = None; st.rerun()
                 if b2.form_submit_button("❌ HỦY"): st.session_state.edit_m_id = None; st.rerun()
