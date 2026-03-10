@@ -11,9 +11,10 @@ import unicodedata
 import pytz
 import random
 import string
+import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS 
+# 1. CẤU HÌNH & CSS
 # ==============================================================================
 st.set_page_config(page_title="HỆ THỐNG ERP PRO", page_icon="🏢", layout="wide", initial_sidebar_state="collapsed")
 
@@ -61,7 +62,14 @@ def remove_accents(input_str):
     if not isinstance(input_str, str): return str(input_str)
     s = unicodedata.normalize('NFD', input_str)
     return "".join([c for c in s if unicodedata.category(c) != 'Mn']).replace("đ", "d").replace("Đ", "D")
-def auto_capitalize(text): return text.strip()[0].upper() + text.strip()[1:] if text and text.strip() else ""
+
+def auto_capitalize(text):
+    # Fix: Không tự động viết hoa nếu nội dung là Link web
+    if not text or not str(text).strip(): return ""
+    text = str(text).strip()
+    if text.lower().startswith(("http", "www")): return text
+    return text[0].upper() + text[1:]
+
 def format_vnd(amount):
     if pd.isna(amount): return "0"
     try:
@@ -69,8 +77,10 @@ def format_vnd(amount):
         if val.is_integer(): return "{:,.0f}".format(val).replace(",", ".")
         return "{:,.2f}".format(val).replace(",", "X").replace(".", ",").replace("X", ".").rstrip('0').rstrip(',')
     except: return "0"
+
 def generate_project_code(name): return f"{''.join([w[0] for w in remove_accents(name).upper().split() if w.isalnum()])}{get_vn_time().strftime('%d%m%y')}" if name else ""
 def generate_material_code(name): return f"VT{''.join([w[0] for w in remove_accents(name).upper().split() if w.isalnum()])[:3]}{''.join(random.choices(string.digits, k=3))}"
+
 def upload_image_to_drive(image_file, file_name):
     try:
         creds = get_creds(); service = build('drive', 'v3', credentials=creds); folder_id = st.secrets["DRIVE_FOLDER_ID"]
@@ -186,12 +196,13 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, u
     ws_data.append_row(row_data)
     clear_data_cache()
 
-def update_material_row(row_idx, qty, price, note):
+def update_material_row(row_idx, qty, price, note, link_ncc):
     sheet = get_gs_client().open("QuanLyThuChi").worksheet("data_duan")
     sheet.update_cell(int(row_idx), 7, qty)
     sheet.update_cell(int(row_idx), 8, price)
     sheet.update_cell(int(row_idx), 9, float(qty) * float(price))
     sheet.update_cell(int(row_idx), 10, auto_capitalize(note))
+    sheet.update_cell(int(row_idx), 11, link_ncc) # Sửa thêm Link
     clear_data_cache()
 
 def update_master_material(row_idx, name, u1, u2, ratio, price):
@@ -519,6 +530,7 @@ def render_vattu_module(is_laptop):
                     input_price = col_p.number_input("Đơn giá (VNĐ)", min_value=0, value=suggested_price, step=1000, format="%d")
                     if input_price: col_p.caption(f"💰 **{format_vnd(input_price)} VNĐ**")
                     
+                    # Nâng cấp layout Ghi chú & Link tràn viền
                     note = st.text_input("Ghi chú (Tùy chọn)")
                     link_ncc = st.text_input("Link/Nhà Cung Cấp (Tùy chọn)")
                     
@@ -534,31 +546,29 @@ def render_vattu_module(is_laptop):
         for i, r in data_frame.iterrows():
             c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
             
-            # --- LOGIC THU GỌN GHI CHÚ VÀ CHUYỂN ĐỔI LINK THÔNG MINH ---
+            # --- LOGIC THU GỌN VÀ HIỂN THỊ LINK THÔNG MINH (Không phân biệt hoa/thường) ---
             sub_info = [f"ĐVT: <b>{r['DVT']}</b>"]
             
-            # Xử lý Note (Ghi chú)
-            note_str = str(r['GhiChu']).strip()
+            note_str = str(r.get('GhiChu', '')).strip()
             if note_str:
-                if note_str.startswith("http"):
-                    sub_info.append(f"<a href='{note_str}' target='_blank' style='color:#3b82f6; text-decoration:none;'>🔗 Link Ghi Chú</a>")
+                if note_str.lower().startswith(("http", "www")):
+                    href = note_str if note_str.lower().startswith("http") else "https://" + note_str
+                    sub_info.append(f"<a href='{href}' target='_blank' style='color:#3b82f6; text-decoration:none;'>🔗 Link SP (Ghi chú)</a>")
                 else:
                     short_note = note_str if len(note_str) <= 30 else note_str[:27] + "..."
                     sub_info.append(f"<span title='{note_str}'>{short_note}</span>")
             
-            # Xử lý Link NCC
             link_str = str(r.get('LinkNCC', '')).strip()
             if link_str:
-                if link_str.startswith("http") or link_str.startswith("www"):
-                    href = link_str if link_str.startswith("http") else "https://" + link_str
-                    sub_info.append(f"<a href='{href}' target='_blank' style='color:#10b981; text-decoration:none; font-weight:bold;'>🛒 Link SP</a>")
+                if link_str.lower().startswith(("http", "www")):
+                    href = link_str if link_str.lower().startswith("http") else "https://" + link_str
+                    sub_info.append(f"<a href='{href}' target='_blank' style='color:#10b981; text-decoration:none; font-weight:bold;'>🛒 Link Mua Hàng</a>")
                 else:
                     short_ncc = link_str if len(link_str) <= 20 else link_str[:17] + "..."
                     sub_info.append(f"<span title='{link_str}'>NCC: {short_ncc}</span>")
             
             sub_text = " | ".join(sub_info)
             
-            # RENDER HTML
             c1.markdown(f"<div class='cell-main' style='font-size:0.95rem; font-weight:bold;'>{r['TenVT']}</div><div class='cell-sub' style='font-size:0.8rem; color:gray;'>{sub_text}</div>", unsafe_allow_html=True)
             c2.markdown(f"<div style='margin-top:8px;'>{r['SoLuong']}</div>", unsafe_allow_html=True)
             c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important;margin-top:8px;'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
@@ -583,14 +593,24 @@ def render_vattu_module(is_laptop):
                     re = df_pj[df_pj['Row_Index'] == st.session_state.edit_vt_id].iloc[0]
                     with st.form("ed_vt"):
                         st.info(f"Sửa: {re['TenVT']}")
+                        
                         c1, c2 = st.columns(2)
                         nq = c1.number_input("SL mới:", value=float(re['SoLuong']))
                         np = c2.number_input("Đơn giá mới:", value=int(re['DonGia']), step=1000, format="%d")
                         if np: c2.caption(f"💰 **{format_vnd(np)} VNĐ**")
                         
-                        nn = st.text_input("Ghi chú:", value=re['GhiChu'])
-                        if st.form_submit_button("CẬP NHẬT"): update_material_row(st.session_state.edit_vt_id, nq, np, nn); st.session_state.edit_vt_id = None; st.rerun()
-                        if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
+                        c3, c4 = st.columns(2)
+                        nn = c3.text_input("Ghi chú:", value=str(re.get('GhiChu', '')))
+                        nl = c4.text_input("Link/Nhà Cung Cấp:", value=str(re.get('LinkNCC', ''))) # CẬP NHẬT: THÊM Ô SỬA LINK VÀO ĐÂY
+                        
+                        col_b1, col_b2 = st.columns(2)
+                        with col_b1:
+                            if st.form_submit_button("CẬP NHẬT", use_container_width=True): 
+                                update_material_row(st.session_state.edit_vt_id, nq, np, nn, nl)
+                                st.session_state.edit_vt_id = None; st.rerun()
+                        with col_b2:
+                            if st.form_submit_button("HỦY", use_container_width=True): 
+                                st.session_state.edit_vt_id = None; st.rerun()
 
             page = render_pagination(len(dv), 20, "vt")
             dv_paged = dv.iloc[(page-1)*20 : page*20]
