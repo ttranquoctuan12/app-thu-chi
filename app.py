@@ -11,6 +11,7 @@ import unicodedata
 import pytz
 import random
 import string
+import difflib
 
 # ==============================================================================
 # 1. CẤU HÌNH & CSS (NO SIDEBAR - FULL WIDTH)
@@ -206,9 +207,9 @@ def update_master_material(row_idx, name, u1, u2, ratio, price):
 def generate_full_backup():
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_tc = load_data_with_index(); df_tc.to_excel(writer, sheet_name='ThuChi', index=False)
-        df_pj = load_project_data(); df_pj.to_excel(writer, sheet_name='DuAn_ChiTiet', index=False)
-        df_m = load_materials_master(); df_m.to_excel(writer, sheet_name='KhoVatTu', index=False)
+        load_data_with_index().to_excel(writer, sheet_name='ThuChi', index=False)
+        load_project_data().to_excel(writer, sheet_name='DuAn_ChiTiet', index=False)
+        load_materials_master().to_excel(writer, sheet_name='KhoVatTu', index=False)
     return output.getvalue()
 
 def convert_df_to_excel_custom(df_report, start_date, end_date):
@@ -320,7 +321,7 @@ def process_report_data(df, start_date=None, end_date=None):
 def render_pagination(total_items, items_per_page, key_prefix):
     total_pages = max(1, (total_items - 1) // items_per_page + 1)
     if total_pages <= 1: return 1
-    c1, c2, c3 = st.columns([8, 2, 2])
+    c1, c2, c3 = st.columns([8, 1, 1])
     with c2: st.write("Trang:")
     with c3: page = st.number_input("Trang", min_value=1, max_value=total_pages, value=1, label_visibility="collapsed", key=f"page_{key_prefix}")
     return page
@@ -394,7 +395,6 @@ def render_thuchi_module(is_laptop):
                 else: st.warning("Nhập thiếu thông tin!")
         if is_edit and st.button("Hủy Sửa", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-        # CẤU HÌNH NỢ
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander("🛠️ CẤU HÌNH KHOẢN NỢ TẠM TÍNH", expanded=False):
             cfg = load_config()
@@ -433,12 +433,10 @@ def render_thuchi_module(is_laptop):
         start_idx = (page - 1) * items_per_page
         df_paged = df_sorted.iloc[start_idx : start_idx + items_per_page]
 
-        # FIX: KHẮC PHỤC LỖI CHIỀU CAO CONATAINER (Height Error Fix)
         if is_laptop:
             with st.container(height=600):
                 _render_tc_items(df_paged)
         else:
-            # Không sử dụng container cố định chiều cao cho giao diện Mobile/Hẹp
             _render_tc_items(df_paged)
 
     def render_export_tc():
@@ -452,7 +450,6 @@ def render_thuchi_module(is_laptop):
                 st.download_button("DOWNLOAD FILE", excel_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.warning("Không có dữ liệu")
 
-    # LAYOUT
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_tc()
@@ -462,8 +459,7 @@ def render_thuchi_module(is_laptop):
             with t2:
                 d1, d2 = st.date_input("Từ", get_vn_time().replace(day=1), key="d1"), st.date_input("Đến", get_vn_time(), key="d2")
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
-            with t3:
-                render_export_tc()
+            with t3: render_export_tc()
     else:
         mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"]) if st.session_state.role == 'admin' else st.tabs(["LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
         idx = 0
@@ -516,7 +512,7 @@ def render_vattu_module(is_laptop):
                     c1, c2, c3 = st.columns([1, 1.5, 1.5])
                     qty = c1.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
                     note = c2.text_input("Ghi chú")
-                    link_ncc = c3.text_input("Link/Nhà Cung Cấp")
+                    link_ncc = c3.text_input("Link/Nhà Cung Cấp") 
                     
                     if st.form_submit_button("➕ THÊM VÀO DỰ ÁN"):
                         if qty is not None and qty > 0:
@@ -553,7 +549,7 @@ def render_vattu_module(is_laptop):
                         st.info(f"Sửa: {re['TenVT']}")
                         c1, c2 = st.columns(2)
                         nq = c1.number_input("SL mới:", value=float(re['SoLuong']))
-                        np = c2.number_input("Đơn giá mới:", value=float(re['DonGia']))
+                        np = c2.number_input("Đơn giá mới:", value=float(re['DonGia'])) 
                         nn = st.text_input("Ghi chú:", value=re['GhiChu'])
                         if st.form_submit_button("CẬP NHẬT"): update_material_row(st.session_state.edit_vt_id, nq, np, nn); st.session_state.edit_vt_id = None; st.rerun()
                         if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
@@ -561,38 +557,67 @@ def render_vattu_module(is_laptop):
             page = render_pagination(len(dv), 20, "vt")
             dv_paged = dv.iloc[(page-1)*20 : page*20]
 
-            # FIX: KHẮC PHỤC LỖI CHIỀU CAO CONATAINER (Height Error Fix)
             if is_laptop:
-                with st.container(height=600):
-                    _render_vt_items(dv_paged)
+                with st.container(height=600): _render_vt_items(dv_paged)
             else:
-                # Không sử dụng container cố định chiều cao cho giao diện Mobile/Hẹp
                 _render_vt_items(dv_paged)
-
             st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
 
     def render_master_data():
         df_m = load_materials_master()
-        if 'edit_m_id' not in st.session_state: st.session_state.edit_m_id = None
-        
-        if st.session_state.edit_m_id and st.session_state.role == 'admin':
-            re = df_m[df_m['Row_Index'] == st.session_state.edit_m_id].iloc[0]
-            with st.form("ed_master"):
-                st.info(f"Sửa Thông Tin Gốc: {re['TenVT']}")
-                n_name = st.text_input("Tên VT", re['TenVT'])
-                c1, c2, c3, c4 = st.columns(4)
-                nu1 = c1.text_input("ĐVT 1", re['DVT_Cap1'])
-                nu2 = c2.text_input("ĐVT 2", re['DVT_Cap2'])
-                nrat = c3.number_input("Quy đổi", value=float(re.get('QuyDoi',1)))
-                npri = c4.number_input("Giá chuẩn", value=float(re.get('DonGia_Cap1',0)))
-                if st.form_submit_button("LƯU KHO"): update_master_material(st.session_state.edit_m_id, n_name, nu1, nu2, nrat, npri); st.session_state.edit_m_id = None; st.rerun()
-                if st.form_submit_button("HỦY"): st.session_state.edit_m_id = None; st.rerun()
+        if df_m.empty:
+            st.info("Kho vật tư trống.")
+            return
 
-        st.dataframe(df_m, use_container_width=True)
-        if st.session_state.role == 'admin' and not df_m.empty:
-            st.caption("Nhập ID dòng để sửa (Row_Index):")
-            idx_to_edit = st.number_input("Row Index", min_value=2, step=1, value=2)
-            if st.button("Sửa thông tin gốc"): st.session_state.edit_m_id = idx_to_edit; st.rerun()
+        # 1. EDIT FORM (Hiển thị khi bấm nút sửa)
+        if 'edit_m_id' not in st.session_state: st.session_state.edit_m_id = None
+        if st.session_state.edit_m_id and st.session_state.role == 'admin':
+            re = df_m[df_m['Row_Index'] == st.session_state.edit_m_id]
+            if not re.empty:
+                re = re.iloc[0]
+                with st.form("ed_master"):
+                    st.info(f"✏️ Sửa thông tin gốc: {re['TenVT']}")
+                    n_name = st.text_input("Tên VT", re['TenVT'])
+                    c1, c2, c3, c4 = st.columns(4)
+                    nu1 = c1.text_input("ĐVT Lớn (Cấp 1)", re['DVT_Cap1'])
+                    nu2 = c2.text_input("ĐVT Nhỏ (Cấp 2)", re['DVT_Cap2'])
+                    nrat = c3.number_input("Quy đổi", value=float(re.get('QuyDoi',1)))
+                    npri = c4.number_input("Giá chuẩn", value=float(re.get('DonGia_Cap1',0)))
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1:
+                        if st.form_submit_button("💾 LƯU KHO"): update_master_material(st.session_state.edit_m_id, n_name, nu1, nu2, nrat, npri); st.session_state.edit_m_id = None; st.rerun()
+                    with col_b2:
+                        if st.form_submit_button("❌ HỦY"): st.session_state.edit_m_id = None; st.rerun()
+
+        # 2. LIST VIEW (Thay thế cho Dataframe cũ)
+        st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:25%">QUY ĐỔI</div><div style="width:20%;text-align:right">GIÁ CHUẨN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
+        
+        search_m = st.text_input("🔍 Tìm kiếm vật tư trong kho:", key="search_master", placeholder="Nhập tên hoặc mã vật tư...")
+        if search_m:
+            df_m = df_m[df_m['TenVT'].str.contains(search_m, case=False, na=False) | df_m['MaVT'].str.contains(search_m, case=False, na=False)]
+
+        page = render_pagination(len(df_m), 20, "master_vt")
+        start_idx = (page - 1) * 20
+        df_paged = df_m.iloc[start_idx : start_idx + 20]
+
+        with st.container(height=600 if is_laptop else None):
+            for i, r in df_paged.iterrows():
+                c1, c2, c3, c4 = st.columns([4, 2.5, 2, 1.5])
+                c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>Mã: {r['MaVT']}</div>", unsafe_allow_html=True)
+                
+                dvt_str = f"1 {r['DVT_Cap1']} = {r['QuyDoi']} {r['DVT_Cap2']}" if r['DVT_Cap2'] else f"{r['DVT_Cap1']}"
+                c2.markdown(f"<div class='cell-sub' style='margin-top:8px;'>{dvt_str}</div>", unsafe_allow_html=True)
+                
+                c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important;margin-top:8px;'>{format_vnd(r.get('DonGia_Cap1',0))}</div>", unsafe_allow_html=True)
+                
+                with c4:
+                    if st.session_state.role == 'admin':
+                        b1, b2 = st.columns(2)
+                        # Dùng inline ID cho Edit và Delete
+                        if b1.button("✏️", key=f"em_{r['Row_Index']}"): st.session_state.edit_m_id = r['Row_Index']; st.rerun()
+                        if b2.button("🗑️", key=f"dm_{r['Row_Index']}"): delete_transaction("dm_vattu", r['Row_Index']); st.rerun()
+                st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
 
     def render_export_vt():
         if not df_pj.empty:
