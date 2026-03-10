@@ -11,7 +11,6 @@ import unicodedata
 import pytz
 import random
 import string
-import difflib
 
 # ==============================================================================
 # 1. CẤU HÌNH & CSS (NO SIDEBAR - FULL WIDTH)
@@ -178,7 +177,6 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, p
     try: ws_data = wb.worksheet("data_duan")
     except: ws_data = wb.add_worksheet("data_duan", 1000, 11); ws_data.append_row(["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu", "LinkNCC"])
     
-    # Ensure column exists logic implicitly handled by appending row matching headers
     headers = ws_data.row_values(1)
     row_data = [proj_code, proj_name, get_vn_time().strftime('%Y-%m-%d %H:%M:%S'), mat_code, mat_name, selected_unit, qty, final_price, thanh_tien, auto_capitalize(note)]
     if 'LinkNCC' in headers: row_data.append(link_ncc)
@@ -208,9 +206,9 @@ def update_master_material(row_idx, name, u1, u2, ratio, price):
 def generate_full_backup():
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_tc = load_data_with_index(); df_tc.to_excel(writer, sheet_name='ThuChi', index=False)
-        df_pj = load_project_data(); df_pj.to_excel(writer, sheet_name='DuAn_ChiTiet', index=False)
-        df_m = load_materials_master(); df_m.to_excel(writer, sheet_name='KhoVatTu', index=False)
+        load_data_with_index().to_excel(writer, sheet_name='ThuChi', index=False)
+        load_project_data().to_excel(writer, sheet_name='DuAn_ChiTiet', index=False)
+        load_materials_master().to_excel(writer, sheet_name='KhoVatTu', index=False)
     return output.getvalue()
 
 def convert_df_to_excel_custom(df_report, start_date, end_date):
@@ -327,6 +325,31 @@ def render_pagination(total_items, items_per_page, key_prefix):
     with c3: page = st.number_input("Trang", min_value=1, max_value=total_pages, value=1, label_visibility="collapsed", key=f"page_{key_prefix}")
     return page
 
+# ==================== AUTHENTICATION & LOGIN UI ====================
+def check_password():
+    if 'role' not in st.session_state: st.session_state.role = None
+    if st.session_state.role is None:
+        c1, c2, c3 = st.columns([1, 1.5, 1])
+        with c2:
+            st.markdown("<br><br><h2 style='text-align:center;'>🔐 HỆ THỐNG ERP</h2>", unsafe_allow_html=True)
+            with st.form("login"):
+                u = st.text_input("Tên đăng nhập:").strip()
+                p = st.text_input("Mật khẩu:", type="password")
+                if st.form_submit_button("ĐĂNG NHẬP"):
+                    with st.spinner("Đang xác thực..."):
+                        cfg = load_config()
+                        if u == "admin" and p == cfg['admin_pwd']: st.session_state.role = "admin"; st.rerun()
+                        elif u == "viewer" and p == cfg['viewer_pwd']: st.session_state.role = "viewer"; st.rerun()
+                        else: st.error("Sai thông tin!")
+        return False
+    return True
+
+def change_password_ui():
+    with st.form("cp"):
+        n = st.text_input("Mật khẩu mới:", type="password")
+        if st.form_submit_button("Đổi mật khẩu"):
+            update_password(st.session_state.role, n); st.success("Xong!")
+
 # --- THU CHI UI ---
 def render_thuchi_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUYẾT TOÁN</div>", unsafe_allow_html=True)
@@ -351,7 +374,6 @@ def render_thuchi_module(is_laptop):
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
             
-            # Danh mục gợi ý (Lấy từ dữ liệu cũ)
             suggested_cats = [""] + list(df['MoTa'].unique()) if not df.empty else [""]
             col_desc1, col_desc2 = st.columns([1, 2])
             d_desc_sel = col_desc1.selectbox("Danh mục cũ", suggested_cats)
@@ -372,11 +394,26 @@ def render_thuchi_module(is_laptop):
                 else: st.warning("Nhập thiếu thông tin!")
         if is_edit and st.button("Hủy Sửa", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
+        # DEBT CONFIG FOR ADMIN
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🛠️ CẤU HÌNH KHOẢN NỢ TẠM TÍNH", expanded=False):
+            cfg = load_config()
+            with st.form("debt_form"):
+                st.caption("Các khoản này sẽ xuất hiện ở dưới cùng của file Excel.")
+                d1_n = st.text_input("Tên Khoản 1:", value=cfg.get('debt_1_name', ''))
+                d1_v = st.text_input("Giá trị 1 (Ghi số âm, vd: -4000000):", value=cfg.get('debt_1_val', ''))
+                d2_n = st.text_input("Tên Khoản 2:", value=cfg.get('debt_2_name', ''))
+                d2_v = st.text_input("Giá trị 2:", value=cfg.get('debt_2_val', ''))
+                
+                if st.form_submit_button("LƯU CẤU HÌNH"):
+                    update_config_value('debt_1_name', d1_n); update_config_value('debt_1_val', d1_v)
+                    update_config_value('debt_2_name', d2_n); update_config_value('debt_2_val', d2_v)
+                    st.success("Đã lưu!"); time.sleep(0.5); st.rerun()
+
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
         
-        # Lọc & Phân trang
         df_sorted = df.sort_values(by='Ngay', ascending=False)
         items_per_page = 20
         page = render_pagination(len(df_sorted), items_per_page, "tc")
@@ -460,7 +497,7 @@ def render_vattu_module(is_laptop):
                     c1, c2, c3 = st.columns([1, 1.5, 1.5])
                     qty = c1.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
                     note = c2.text_input("Ghi chú")
-                    link_ncc = c3.text_input("Link/Nhà Cung Cấp") # TÍNH NĂNG MỚI: LINK NCC
+                    link_ncc = c3.text_input("Link/NCC")
                     
                     if st.form_submit_button("➕ THÊM VÀO DỰ ÁN"):
                         if qty is not None and qty > 0:
@@ -475,7 +512,6 @@ def render_vattu_module(is_laptop):
             if st.session_state.role == 'admin': st.markdown(f"**Đang xem: {vp}**")
             st.markdown("""<div class="excel-header" style="display:flex"><div style="width:40%">TÊN VẬT TƯ</div><div style="width:15%">SL</div><div style="width:25%;text-align:right">TIỀN</div><div style="width:20%;text-align:center">...</div></div>""", unsafe_allow_html=True)
             
-            # SỬA CHI TIẾT TỪNG DÒNG (Bao gồm Giá)
             if st.session_state.role == 'admin':
                 if 'edit_vt_id' not in st.session_state: st.session_state.edit_vt_id = None
                 if st.session_state.edit_vt_id:
@@ -484,12 +520,11 @@ def render_vattu_module(is_laptop):
                         st.info(f"Sửa: {re['TenVT']}")
                         c1, c2 = st.columns(2)
                         nq = c1.number_input("SL mới:", value=float(re['SoLuong']))
-                        np = c2.number_input("Đơn giá mới:", value=float(re['DonGia'])) # SỬA GIÁ
+                        np = c2.number_input("Đơn giá mới:", value=float(re['DonGia']))
                         nn = st.text_input("Ghi chú:", value=re['GhiChu'])
                         if st.form_submit_button("CẬP NHẬT"): update_material_row(st.session_state.edit_vt_id, nq, np, nn); st.session_state.edit_vt_id = None; st.rerun()
                         if st.form_submit_button("HỦY"): st.session_state.edit_vt_id = None; st.rerun()
 
-            # Phân trang Vật Tư
             page = render_pagination(len(dv), 20, "vt")
             dv_paged = dv.iloc[(page-1)*20 : page*20]
 
@@ -557,7 +592,7 @@ def render_vattu_module(is_laptop):
         with mt[idx+1]: render_master_data()
         with mt[idx+2]: render_export_vt()
 
-# ==================== 8. APP RUN & TOP BAR ====================
+# ==================== MAIN APP RUN ====================
 if check_password():
     c1, c2, c3, c4 = st.columns([5, 2, 2.5, 2.5])
     with c1: st.markdown(f"👋 **Xin chào: {'ADMIN' if st.session_state.role == 'admin' else 'VIEWER'}**")
