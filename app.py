@@ -89,16 +89,14 @@ def upload_image_to_drive(image_file, file_name):
         return file.get('webViewLink')
     except: return ""
 
-# --- LOGIC XỬ LÝ LINK THÔNG MINH ---
 def extract_domain(url):
-    """Trích xuất tên miền (domain) từ URL"""
     url_str = str(url).strip()
     if not url_str: return ""
     if not url_str.lower().startswith(('http://', 'https://')):
         if 'www.' in url_str.lower() or ('.' in url_str and '/' in url_str):
             url_str = 'https://' + url_str
         else:
-            return url_str # Text thường (VD: NCC Shopee)
+            return url_str 
     try:
         domain = urlparse(url_str).netloc
         return domain.replace('www.', '') if domain else url_str
@@ -106,27 +104,20 @@ def extract_domain(url):
         return url_str
 
 def clean_note_and_link(note, link):
-    """Tự động phân tách Note và Link nếu người dùng dán lộn xộn"""
     n = str(note).strip()
     l = str(link).strip()
-    
-    # Tìm kiếm link trong phần Ghi chú
     urls_in_note = re.findall(r'(https?://\S+|www\.\S+)', n, flags=re.IGNORECASE)
     
     if urls_in_note:
         first_url = urls_in_note[0]
         if not l:  
-            # Nếu Link trống -> Chuyển link từ Note sang Link
             l = first_url
             n = n.replace(first_url, '').strip()
         elif first_url in l or l in first_url: 
-            # Nếu dán vào cả 2 ô giống nhau -> Xóa link rác ở Note
             n = n.replace(first_url, '').strip()
             
-    # Dọn dẹp các ký tự thừa do xóa link để lại (VD: gạch ngang, phẩy)
     n = re.sub(r'^[\s,\-\|]+|[\s,\-\|]+$', '', n)
     return auto_capitalize(n), l
-
 
 # ==================== 3. DATA LAYER ====================
 def clear_data_cache(): st.cache_data.clear()
@@ -208,11 +199,8 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, u
     wb = get_gs_client().open("QuanLyThuChi")
     mat_code = ""
     proj_name = auto_capitalize(proj_name); mat_name = auto_capitalize(mat_name)
-    
     final_price = float(user_input_price)
     thanh_tien = float(qty) * final_price
-    
-    # Process links smartly
     final_note, final_link = clean_note_and_link(note, link_ncc)
     
     if is_new_item:
@@ -230,17 +218,24 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, u
     try: ws_data = wb.worksheet("data_duan")
     except: ws_data = wb.add_worksheet("data_duan", 1000, 11); ws_data.append_row(["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu", "LinkNCC"])
     
+    # TỰ ĐỘNG MỞ RỘNG CỘT TRÁNH LỖI OUT OF BOUNDS
+    if ws_data.col_count < 11: ws_data.add_cols(11 - ws_data.col_count)
     headers = ws_data.row_values(1)
-    row_data = [proj_code, proj_name, get_vn_time().strftime('%Y-%m-%d %H:%M:%S'), mat_code, mat_name, selected_unit, qty, final_price, thanh_tien, final_note]
-    if 'LinkNCC' in headers: row_data.append(final_link)
-    elif len(headers) < 11: ws_data.update_cell(1, 11, "LinkNCC"); row_data.append(final_link)
+    if len(headers) < 11: ws_data.update_cell(1, 11, "LinkNCC")
     
+    row_data = [proj_code, proj_name, get_vn_time().strftime('%Y-%m-%d %H:%M:%S'), mat_code, mat_name, selected_unit, qty, final_price, thanh_tien, final_note, final_link]
     ws_data.append_row(row_data)
     clear_data_cache()
 
 def update_material_row(row_idx, qty, price, note, link_ncc):
     final_note, final_link = clean_note_and_link(note, link_ncc)
     sheet = get_gs_client().open("QuanLyThuChi").worksheet("data_duan")
+    
+    # TỰ ĐỘNG MỞ RỘNG CỘT TRÁNH LỖI KHI CẬP NHẬT DỮ LIỆU CŨ
+    if sheet.col_count < 11:
+        sheet.add_cols(11 - sheet.col_count)
+        sheet.update_cell(1, 11, "LinkNCC")
+        
     sheet.update_cell(int(row_idx), 7, qty)
     sheet.update_cell(int(row_idx), 8, price)
     sheet.update_cell(int(row_idx), 9, float(qty) * float(price))
@@ -329,15 +324,12 @@ def export_project_materials_excel(df_proj, proj_name):
         f_link = wb.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': fn, 'font_color': 'blue', 'underline': True})
         
         ws = wb.add_worksheet("BangKe")
-        
-        # SỬA CHIỀU RỘNG MERGE RANGE ĐỂ BAO GỒM CỘT GHI CHÚ (9 cột)
         ws.merge_range('A1:I1', "BẢNG KÊ VẬT TƯ", f_title)
         ws.merge_range('A2:I2', f"Dự án: {proj_name}", f_sub)
         ws.merge_range('A3:I3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", f_sub)
         ws.merge_range('A4:I4', "HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN", f_sys)
         ws.merge_range('A5:I5', "Người tạo: TUẤN VDS.HCM", f_sub)
         
-        # BỔ SUNG CỘT GHI CHÚ VÀO FILE EXCEL
         cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền", "Ghi chú", "Link/NCC"]
         for i, h in enumerate(cols): ws.write(5, i, h, f_head)
         ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15); ws.set_column('H:I', 25)
@@ -354,7 +346,6 @@ def export_project_materials_excel(df_proj, proj_name):
             ws.write(6+i, 6, r.get('ThanhTien', 0), f_num)
             ws.write(6+i, 7, str(r.get('GhiChu', '')), f_cell)
             
-            # FORMAT LINK RÚT GỌN TRONG EXCEL
             link_val = str(r.get('LinkNCC', '')).strip()
             domain = extract_domain(link_val)
             is_url = link_val.lower().startswith(('http', 'www')) or (domain != link_val and '.' in domain)
@@ -368,7 +359,7 @@ def export_project_materials_excel(df_proj, proj_name):
             tot += r.get('ThanhTien', 0)
             
         lr = 6 + len(df_c)
-        ws.merge_range(lr, 0, lr, 6, "TỔNG CỘNG", f_tot_l)
+        ws.merge_range(lr, 0, lr, 5, "TỔNG CỘNG", f_tot_l)
         ws.write(lr, 6, tot, f_tot_v)
         ws.write(lr, 7, "", f_tot_l)
         ws.write(lr, 8, "", f_tot_l)
@@ -611,13 +602,17 @@ def render_vattu_module(is_laptop):
         for i, r in data_frame.iterrows():
             c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
             
-            # RÚT GỌN LINK THÔNG MINH
             sub_info = [f"ĐVT: <b>{r['DVT']}</b>"]
             
             note_str = str(r.get('GhiChu', '')).strip()
             if note_str:
-                short_note = note_str if len(note_str) <= 30 else note_str[:27] + "..."
-                sub_info.append(f"<span title='{note_str}'>{short_note}</span>")
+                if note_str.lower().startswith(("http", "www")):
+                    href = note_str if note_str.lower().startswith("http") else "https://" + note_str
+                    domain = extract_domain(href)
+                    sub_info.append(f"<a href='{href}' target='_blank' style='color:#3b82f6; text-decoration:none;'>🔗 {domain}</a>")
+                else:
+                    short_note = note_str if len(note_str) <= 30 else note_str[:27] + "..."
+                    sub_info.append(f"<span title='{note_str}'>{short_note}</span>")
             
             link_str = str(r.get('LinkNCC', '')).strip()
             if link_str:
@@ -656,6 +651,7 @@ def render_vattu_module(is_laptop):
                     re = df_pj[df_pj['Row_Index'] == st.session_state.edit_vt_id].iloc[0]
                     with st.form("ed_vt"):
                         st.info(f"Sửa: {re['TenVT']}")
+                        
                         c1, c2 = st.columns(2)
                         nq = c1.number_input("SL mới:", value=float(re['SoLuong']))
                         np = c2.number_input("Đơn giá mới:", value=int(re['DonGia']), step=1000, format="%d")
