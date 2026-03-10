@@ -206,9 +206,9 @@ def update_master_material(row_idx, name, u1, u2, ratio, price):
 def generate_full_backup():
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        load_data_with_index().to_excel(writer, sheet_name='ThuChi', index=False)
-        load_project_data().to_excel(writer, sheet_name='DuAn_ChiTiet', index=False)
-        load_materials_master().to_excel(writer, sheet_name='KhoVatTu', index=False)
+        df_tc = load_data_with_index(); df_tc.to_excel(writer, sheet_name='ThuChi', index=False)
+        df_pj = load_project_data(); df_pj.to_excel(writer, sheet_name='DuAn_ChiTiet', index=False)
+        df_m = load_materials_master(); df_m.to_excel(writer, sheet_name='KhoVatTu', index=False)
     return output.getvalue()
 
 def convert_df_to_excel_custom(df_report, start_date, end_date):
@@ -319,7 +319,7 @@ def process_report_data(df, start_date=None, end_date=None):
 # ==================== 5. UI COMPONENTS ====================
 def render_pagination(total_items, items_per_page, key_prefix):
     total_pages = max(1, (total_items - 1) // items_per_page + 1)
-    if total_pages == 1: return 1
+    if total_pages <= 1: return 1
     c1, c2, c3 = st.columns([8, 2, 2])
     with c2: st.write("Trang:")
     with c3: page = st.number_input("Trang", min_value=1, max_value=total_pages, value=1, label_visibility="collapsed", key=f"page_{key_prefix}")
@@ -394,7 +394,7 @@ def render_thuchi_module(is_laptop):
                 else: st.warning("Nhập thiếu thông tin!")
         if is_edit and st.button("Hủy Sửa", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
 
-        # DEBT CONFIG FOR ADMIN
+        # CẤU HÌNH NỢ
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander("🛠️ CẤU HÌNH KHOẢN NỢ TẠM TÍNH", expanded=False):
             cfg = load_config()
@@ -410,6 +410,19 @@ def render_thuchi_module(is_laptop):
                     update_config_value('debt_2_name', d2_n); update_config_value('debt_2_val', d2_v)
                     st.success("Đã lưu!"); time.sleep(0.5); st.rerun()
 
+    def _render_tc_items(data_frame):
+        for i, r in data_frame.iterrows():
+            c1, c2, c3, c4 = st.columns([1.5, 4.5, 2.5, 1.5])
+            c1.markdown(f"<span class='cell-sub'>{r['Ngay'].strftime('%d/%m')}</span>", unsafe_allow_html=True)
+            c2.markdown(f"<div class='cell-main'>{r['MoTa']}</div>", unsafe_allow_html=True)
+            c3.markdown(f"<div class='{'money-inc' if r['Loai']=='Thu' else 'money-exp'}' style='text-align:right'>{format_vnd(r['SoTien'])}</div>", unsafe_allow_html=True)
+            with c4:
+                if st.session_state.role == 'admin':
+                    b1, b2 = st.columns(2)
+                    if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
+                    if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): delete_transaction("data", r['Row_Index']); st.rerun()
+            st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
+
     def render_list_tc():
         if df.empty: st.info("Chưa có dữ liệu"); return
         st.markdown("""<div class="excel-header" style="display:flex"><div style="width:15%">NGÀY</div><div style="width:45%">NỘI DUNG</div><div style="width:25%;text-align:right">SỐ TIỀN</div><div style="width:15%;text-align:center">...</div></div>""", unsafe_allow_html=True)
@@ -420,19 +433,26 @@ def render_thuchi_module(is_laptop):
         start_idx = (page - 1) * items_per_page
         df_paged = df_sorted.iloc[start_idx : start_idx + items_per_page]
 
-        with st.container(height=600 if is_laptop else None):
-            for i, r in df_paged.iterrows():
-                c1, c2, c3, c4 = st.columns([1.5, 4.5, 2.5, 1.5])
-                c1.markdown(f"<span class='cell-sub'>{r['Ngay'].strftime('%d/%m')}</span>", unsafe_allow_html=True)
-                c2.markdown(f"<div class='cell-main'>{r['MoTa']}</div>", unsafe_allow_html=True)
-                c3.markdown(f"<div class='{'money-inc' if r['Loai']=='Thu' else 'money-exp'}' style='text-align:right'>{format_vnd(r['SoTien'])}</div>", unsafe_allow_html=True)
-                with c4:
-                    if st.session_state.role == 'admin':
-                        b1, b2 = st.columns(2)
-                        if b1.button("✏️", key=f"e_tc_{r['Row_Index']}"): st.session_state.edit_tc_id = r['Row_Index']; st.rerun()
-                        if b2.button("🗑️", key=f"d_tc_{r['Row_Index']}"): delete_transaction("data", r['Row_Index']); st.rerun()
-                st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
+        # FIX: KHẮC PHỤC LỖI CHIỀU CAO CONATAINER (Height Error Fix)
+        if is_laptop:
+            with st.container(height=600):
+                _render_tc_items(df_paged)
+        else:
+            # Không sử dụng container cố định chiều cao cho giao diện Mobile/Hẹp
+            _render_tc_items(df_paged)
 
+    def render_export_tc():
+        if not df.empty:
+            d1 = st.date_input("Từ ngày", get_vn_time().replace(day=1), key="d1_tc")
+            d2 = st.date_input("Đến ngày", get_vn_time(), key="d2_tc")
+            now_str = get_vn_time().strftime('%Hh%M')
+            fname = f"Quyết toán từ {d1.strftime('%d-%m-%Y')} đến {d2.strftime('%d-%m-%Y')} {now_str}.xlsx"
+            if st.button("TẢI EXCEL", key="btn_ex_tc_load"):
+                excel_data = convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2)
+                st.download_button("DOWNLOAD FILE", excel_data, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        else: st.warning("Không có dữ liệu")
+
+    # LAYOUT
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([3.5, 6.5])
         with c1: render_input_tc()
@@ -443,17 +463,16 @@ def render_thuchi_module(is_laptop):
                 d1, d2 = st.date_input("Từ", get_vn_time().replace(day=1), key="d1"), st.date_input("Đến", get_vn_time(), key="d2")
                 st.dataframe(process_report_data(df, d1, d2), use_container_width=True)
             with t3:
-                d1_e, d2_e = st.date_input("Từ", get_vn_time().replace(day=1), key="d1e"), st.date_input("Đến", get_vn_time(), key="d2e")
-                if st.button("TẢI EXCEL"): st.download_button("DOWNLOAD FILE", convert_df_to_excel_custom(process_report_data(df, d1_e, d2_e), d1_e, d2_e), f"Quyết toán {get_vn_time().strftime('%Hh%M')}.xlsx")
+                render_export_tc()
     else:
         mt = st.tabs(["NHẬP", "LỊCH SỬ", "SỔ QUỸ", "XUẤT"]) if st.session_state.role == 'admin' else st.tabs(["LỊCH SỬ", "SỔ QUỸ", "XUẤT"])
         idx = 0
         if st.session_state.role == 'admin':
             with mt[0]: render_input_tc(); idx += 1
         with mt[idx]: render_list_tc()
-        with mt[idx+1]: st.dataframe(process_report_data(df, st.date_input("Từ", get_vn_time().replace(day=1)), st.date_input("Đến", get_vn_time())), use_container_width=True)
-        with mt[idx+2]:
-            if st.button("TẢI EXCEL", key="m_ex"): st.download_button("DOWNLOAD", convert_df_to_excel_custom(process_report_data(df, get_vn_time().replace(day=1), get_vn_time()), get_vn_time().replace(day=1), get_vn_time()), f"Quyết toán.xlsx")
+        with mt[idx+1]: 
+            st.dataframe(process_report_data(df, st.date_input("Từ", get_vn_time().replace(day=1), key="m_d1"), st.date_input("Đến", get_vn_time(), key="m_d2")), use_container_width=True)
+        with mt[idx+2]: render_export_tc()
 
 def render_vattu_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN</div>", unsafe_allow_html=True)
@@ -497,13 +516,27 @@ def render_vattu_module(is_laptop):
                     c1, c2, c3 = st.columns([1, 1.5, 1.5])
                     qty = c1.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
                     note = c2.text_input("Ghi chú")
-                    link_ncc = c3.text_input("Link/NCC")
+                    link_ncc = c3.text_input("Link/Nhà Cung Cấp")
                     
                     if st.form_submit_button("➕ THÊM VÀO DỰ ÁN"):
                         if qty is not None and qty > 0:
                             pc = df_pj[df_pj['TenDuAn'] == st.session_state.curr_proj_name].iloc[0]['MaDuAn'] if sel_p != "++ TẠO DỰ ÁN MỚI ++" and not df_pj.empty else generate_project_code(st.session_state.curr_proj_name)
                             save_project_material(pc, st.session_state.curr_proj_name, vt_final, u1, u2, ratio, p1 if p1 else 0, u_ch.split(" (")[0] if "(" in u_ch else u_ch, qty, note, link_ncc, is_new)
                             st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
+
+    def _render_vt_items(data_frame):
+        for i, r in data_frame.iterrows():
+            c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
+            ncc_text = f" | NCC: {r.get('LinkNCC', '')}" if str(r.get('LinkNCC', '')) else ""
+            c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}{ncc_text}</div>", unsafe_allow_html=True)
+            c2.write(f"{r['SoLuong']}")
+            c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
+            with c4:
+                if st.session_state.role == 'admin':
+                    b1, b2 = st.columns(2)
+                    if b1.button("✏️", key=f"evt_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
+                    if b2.button("🗑️", key=f"dvt_{r['Row_Index']}"): delete_transaction("data_duan", r['Row_Index']); st.rerun()
+            st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
 
     def render_list_vt():
         vp = st.session_state.curr_proj_name if st.session_state.role == 'admin' else st.selectbox("Xem dự án:", p_opts, index=curr_idx)
@@ -528,19 +561,14 @@ def render_vattu_module(is_laptop):
             page = render_pagination(len(dv), 20, "vt")
             dv_paged = dv.iloc[(page-1)*20 : page*20]
 
-            with st.container(height=600 if is_laptop else None):
-                for i, r in dv_paged.iterrows():
-                    c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
-                    ncc_text = f" | NCC: {r.get('LinkNCC', '')}" if str(r.get('LinkNCC', '')) else ""
-                    c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>{r['DVT']} | {r['GhiChu']}{ncc_text}</div>", unsafe_allow_html=True)
-                    c2.write(f"{r['SoLuong']}")
-                    c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important'>{format_vnd(r['ThanhTien'])}</div>", unsafe_allow_html=True)
-                    with c4:
-                        if st.session_state.role == 'admin':
-                            b1, b2 = st.columns(2)
-                            if b1.button("✏️", key=f"evt_{r['Row_Index']}"): st.session_state.edit_vt_id = r['Row_Index']; st.rerun()
-                            if b2.button("🗑️", key=f"dvt_{r['Row_Index']}"): delete_transaction("data_duan", r['Row_Index']); st.rerun()
-                    st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
+            # FIX: KHẮC PHỤC LỖI CHIỀU CAO CONATAINER (Height Error Fix)
+            if is_laptop:
+                with st.container(height=600):
+                    _render_vt_items(dv_paged)
+            else:
+                # Không sử dụng container cố định chiều cao cho giao diện Mobile/Hẹp
+                _render_vt_items(dv_paged)
+
             st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
 
     def render_master_data():
