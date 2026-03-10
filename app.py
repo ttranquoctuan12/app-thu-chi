@@ -14,7 +14,7 @@ import string
 import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS
+# 1. CẤU HÌNH & CSS 
 # ==============================================================================
 st.set_page_config(page_title="HỆ THỐNG ERP PRO", page_icon="🏢", layout="wide", initial_sidebar_state="collapsed")
 
@@ -31,7 +31,7 @@ st.markdown("""
     .bal-neg { color: #ef4444 !important; }
 
     .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox div[data-baseweb="select"] { font-weight: 600; border-radius: 6px; }
-    [data-testid="stFormSubmitButton"] > button { width: 100%; background-color: #ff4b4b; color: white; font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px; }
+    [data-testid="stFormSubmitButton"] > button { width: 100%; background-color: #ff4b4b; color: white; font-weight: bold; border: none; padding: 0.6rem; border-radius: 6px; margin-top: 10px; }
     [data-testid="stFormSubmitButton"] > button:hover { background-color: #d93434; transform: scale(1.01); }
 
     div[data-testid="column"] button { padding: 0px 8px !important; min-height: 32px !important; height: auto !important; font-size: 0.8rem; border: 1px solid rgba(128, 128, 128, 0.3); background-color: var(--background-color); color: var(--text-color); }
@@ -156,13 +156,11 @@ def update_transaction(row_idx, date, category, amount, description, image_link)
 def delete_transaction(sheet_name, row_idx):
     get_gs_client().open("QuanLyThuChi").worksheet(sheet_name).delete_rows(int(row_idx)); clear_data_cache()
 
-# CẬP NHẬT LOGIC LƯU GIÁ VẬT TƯ
 def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, user_input_price, selected_unit, qty, note, link_ncc, is_new_item=False):
     wb = get_gs_client().open("QuanLyThuChi")
     mat_code = ""
     proj_name = auto_capitalize(proj_name); mat_name = auto_capitalize(mat_name)
     
-    # Giá lưu vào dự án là giá do User nhập trên form
     final_price = float(user_input_price)
     thanh_tien = float(qty) * final_price
     
@@ -170,7 +168,6 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, u
         try: ws_master = wb.worksheet("dm_vattu")
         except: ws_master = wb.add_worksheet("dm_vattu", 1000, 6); ws_master.append_row(["MaVT", "TenVT", "DVT_Cap1", "DVT_Cap2", "QuyDoi", "DonGia_Cap1"])
         mat_code = generate_material_code(mat_name)
-        # Tính ngược lại giá Cấp 1 để lưu vào kho chuẩn
         master_price = final_price if selected_unit == unit1 else final_price * float(ratio)
         ws_master.append_row([mat_code, mat_name, auto_capitalize(unit1), auto_capitalize(unit2), ratio, master_price])
     else:
@@ -286,7 +283,7 @@ def export_project_materials_excel(df_proj, proj_name):
         
         cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền", "Link/NCC"]
         for i, h in enumerate(cols): ws.write(5, i, h, f_head)
-        ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15); ws.set_column('H:H', 25)
+        ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15); ws.set_column('H:H', 30)
         
         df_c = df_proj.reset_index(drop=True)
         tot = 0
@@ -322,7 +319,6 @@ def process_report_data(df, start_date=None, end_date=None):
     df_proc['SoTienShow'] = df_proc.apply(lambda x: x['SoTien'] if x['Loai'] != 'Open' else 0, axis=1)
     return df_proc[['STT', 'Khoan', 'NgayChi', 'NgayNhan', 'SoTienShow', 'ConLai', 'Loai']]
 
-# ==================== 5. UI COMPONENTS ====================
 def render_pagination(total_items, items_per_page, key_prefix):
     total_pages = max(1, (total_items - 1) // items_per_page + 1)
     if total_pages <= 1: return 1
@@ -350,12 +346,6 @@ def check_password():
         return False
     return True
 
-def change_password_ui():
-    with st.form("cp"):
-        n = st.text_input("Mật khẩu mới:", type="password")
-        if st.form_submit_button("Đổi mật khẩu"):
-            update_password(st.session_state.role, n); st.success("Xong!")
-
 # --- THU CHI UI ---
 def render_thuchi_module(is_laptop):
     st.markdown("<div class='system-title'>HỆ THỐNG QUYẾT TOÁN</div>", unsafe_allow_html=True)
@@ -380,22 +370,17 @@ def render_thuchi_module(is_laptop):
             d_date = c1.date_input("Ngày", d_d)
             d_type = c2.selectbox("Loại", ["Chi", "Thu"], index=(0 if d_t=="Chi" else 1))
             
-            suggested_cats = [""] + list(df['MoTa'].unique()) if not df.empty else [""]
-            col_desc1, col_desc2 = st.columns([1, 2])
-            d_desc_sel = col_desc1.selectbox("Danh mục cũ", suggested_cats)
-            d_desc_txt = col_desc2.text_input("Hoặc nhập mới", value=d_desc)
-            final_desc = d_desc_txt if d_desc_txt else d_desc_sel
-            
             d_amt = st.number_input("Số tiền", min_value=0.0, step=10000.0, value=d_a, placeholder="0")
+            d_desc = st.text_input("Mô tả", value=d_desc)
             img = st.file_uploader("Ảnh (Không bắt buộc)", type=['jpg','png']) if not is_edit else None
 
             if st.form_submit_button("CẬP NHẬT" if is_edit else "LƯU GIAO DỊCH"):
-                if (d_amt is not None and d_amt > 0) and final_desc:
+                if (d_amt is not None and d_amt > 0) and d_desc:
                     if is_edit:
-                        update_transaction(st.session_state.edit_tc_id, d_date, d_type, d_amt, final_desc, "")
+                        update_transaction(st.session_state.edit_tc_id, d_date, d_type, d_amt, d_desc, "")
                         st.session_state.edit_tc_id = None; st.success("Đã sửa!"); time.sleep(0.5); st.rerun()
                     else:
-                        add_transaction(d_date, d_type, d_amt, final_desc, upload_image_to_drive(img, f"TC_{d_date}") if img else "")
+                        add_transaction(d_date, d_type, d_amt, d_desc, upload_image_to_drive(img, f"TC_{d_date}") if img else "")
                         st.success("Đã thêm!"); time.sleep(0.5); st.rerun()
                 else: st.warning("Nhập thiếu thông tin!")
         if is_edit and st.button("Hủy Sửa", use_container_width=True): st.session_state.edit_tc_id = None; st.rerun()
@@ -432,8 +417,9 @@ def render_thuchi_module(is_laptop):
                 st.download_button("DOWNLOAD FILE", convert_df_to_excel_custom(process_report_data(df, d1, d2), d1, d2), f"Quyet_Toan_{get_vn_time().strftime('%d%m%Y')}.xlsx")
         else: st.warning("Không có dữ liệu")
 
+    # LAYOUT: Tăng tỷ lệ cột bên trái từ 3.5 lên 4.0 để form rộng rãi hơn
     if is_laptop and st.session_state.role == 'admin':
-        c1, c2 = st.columns([3.5, 6.5])
+        c1, c2 = st.columns([4, 6]) 
         with c1: render_input_tc()
         with c2:
             t1, t2, t3 = st.tabs(["LỊCH SỬ", "BÁO CÁO", "XUẤT"])
@@ -470,14 +456,12 @@ def render_vattu_module(is_laptop):
             vt_final = st.text_input("Tên vật tư mới:") if is_new else sel_vt
             u1, u2, ratio, p1 = "", "", 1.0, 0.0
             
-            # SMART PRICING LOGIC
             if not is_new and sel_vt and not df_m.empty:
                 r = df_m[df_m['TenVT'] == sel_vt].iloc[0]
                 u1, u2 = str(r.get('DVT_Cap1','')), str(r.get('DVT_Cap2',''))
                 try: ratio, p1 = float(r.get('QuyDoi',1)), float(r.get('DonGia_Cap1',0))
                 except: pass
                 
-                # Check history in current project
                 if not df_pj.empty:
                     hist = df_pj[(df_pj['TenDuAn'] == st.session_state.curr_proj_name) & (df_pj['TenVT'] == sel_vt)]
                     if not hist.empty:
@@ -503,12 +487,13 @@ def render_vattu_module(is_laptop):
                     if u2: u_opts.append(f"{u2} (Cấp 2)")
                     u_ch = st.radio("Đơn vị:", u_opts if u_opts else ["Mặc định"], horizontal=True)
                     
-                    # NEW LAYOUT: PRICE INPUT INSIDE FORM
-                    c1, c2, c3, c4 = st.columns([1, 1.5, 2, 2])
-                    qty = c1.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
-                    input_price = c2.number_input("Đơn giá", min_value=0.0, value=suggested_price, step=1000.0)
-                    note = c3.text_input("Ghi chú")
-                    link_ncc = c4.text_input("Link/Nhà Cung Cấp")
+                    # UI FIX: Xếp chồng (Stacking) các cột thành 2 hàng để tránh bị che chữ
+                    col_q, col_p = st.columns(2)
+                    qty = col_q.number_input("Số lượng", min_value=0.0, value=None, placeholder="0")
+                    input_price = col_p.number_input("Đơn giá", min_value=0.0, value=suggested_price, step=1000.0)
+                    
+                    note = st.text_input("Ghi chú (Tùy chọn)")
+                    link_ncc = st.text_input("Link/Nhà Cung Cấp (Tùy chọn)")
                     
                     if st.form_submit_button("➕ THÊM VÀO DỰ ÁN"):
                         if qty is not None and qty > 0 and input_price is not None:
@@ -560,6 +545,20 @@ def render_vattu_module(is_laptop):
             else: _render_vt_items(dv_paged)
             st.markdown(f"<div class='total-row'>TỔNG: {format_vnd(dv['ThanhTien'].sum())} VNĐ</div>", unsafe_allow_html=True)
 
+    def _render_master_items(df_to_render):
+        for i, r in df_to_render.iterrows():
+            c1, c2, c3, c4 = st.columns([4, 2.5, 2, 1.5])
+            c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>Mã: {r['MaVT']}</div>", unsafe_allow_html=True)
+            dvt_str = f"1 {r['DVT_Cap1']} = {r['QuyDoi']} {r['DVT_Cap2']}" if r['DVT_Cap2'] else f"{r['DVT_Cap1']}"
+            c2.markdown(f"<div class='cell-sub' style='margin-top:8px;'>{dvt_str}</div>", unsafe_allow_html=True)
+            c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important;margin-top:8px;'>{format_vnd(r.get('DonGia_Cap1',0))}</div>", unsafe_allow_html=True)
+            with c4:
+                if st.session_state.role == 'admin':
+                    b1, b2 = st.columns(2)
+                    if b1.button("✏️", key=f"em_{r['Row_Index']}"): st.session_state.edit_m_id = r['Row_Index']; st.rerun()
+                    if b2.button("🗑️", key=f"dm_{r['Row_Index']}"): delete_transaction("dm_vattu", r['Row_Index']); st.rerun()
+            st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
+
     def render_master_data():
         if df_m.empty: st.info("Kho vật tư trống."); return
         
@@ -585,19 +584,6 @@ def render_vattu_module(is_laptop):
         page = render_pagination(len(df_view), 20, "master_vt")
         df_paged = df_view.iloc[(page - 1) * 20 : page * 20]
 
-        def _render_master_items(df_render):
-            for i, r in df_render.iterrows():
-                c1, c2, c3, c4 = st.columns([4, 2.5, 2, 1.5])
-                c1.markdown(f"<div class='cell-main'>{r['TenVT']}</div><div class='cell-sub'>Mã: {r['MaVT']}</div>", unsafe_allow_html=True)
-                c2.markdown(f"<div class='cell-sub' style='margin-top:8px;'>1 {r['DVT_Cap1']} = {r['QuyDoi']} {r['DVT_Cap2']}</div>" if r['DVT_Cap2'] else f"<div class='cell-sub' style='margin-top:8px;'>{r['DVT_Cap1']}</div>", unsafe_allow_html=True)
-                c3.markdown(f"<div class='money-inc' style='text-align:right;color:#333 !important;margin-top:8px;'>{format_vnd(r.get('DonGia_Cap1',0))}</div>", unsafe_allow_html=True)
-                with c4:
-                    if st.session_state.role == 'admin':
-                        b1, b2 = st.columns(2)
-                        if b1.button("✏️", key=f"em_{r['Row_Index']}"): st.session_state.edit_m_id = r['Row_Index']; st.rerun()
-                        if b2.button("🗑️", key=f"dm_{r['Row_Index']}"): delete_transaction("dm_vattu", r['Row_Index']); st.rerun()
-                st.markdown("<div style='border-bottom:1px solid rgba(128,128,128,0.1)'></div>", unsafe_allow_html=True)
-
         if is_laptop:
             with st.container(height=600): _render_master_items(df_paged)
         else: _render_master_items(df_paged)
@@ -609,8 +595,9 @@ def render_vattu_module(is_laptop):
                 data = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'}) if xp == "TẤT CẢ" else df_pj[df_pj['TenDuAn'] == xp]
                 st.download_button("DOWNLOAD FILE", export_project_materials_excel(data, xp), f"VatTu_{xp}.xlsx")
 
+    # LAYOUT: Tăng tỷ lệ cột bên trái từ 3.5 lên 4.0 
     if is_laptop and st.session_state.role == 'admin':
-        c1, c2 = st.columns([3.5, 6.5])
+        c1, c2 = st.columns([4, 6]) 
         with c1: render_input_vt()
         with c2:
             t1, t2, t3 = st.tabs(["CHI TIẾT DỰ ÁN", "KHO VẬT TƯ", "XUẤT"])
@@ -636,7 +623,9 @@ if check_password():
     with c3:
         if st.session_state.role == 'admin':
             with st.expander("⚙️ CÀI ĐẶT & BACKUP", expanded=False):
-                change_password_ui()
+                with st.form("cp"):
+                    n = st.text_input("Mật khẩu mới:", type="password")
+                    if st.form_submit_button("Đổi mật khẩu"): update_password(st.session_state.role, n); st.success("Xong!")
                 st.divider()
                 if st.button("🔄 LÀM MỚI APP", use_container_width=True): clear_data_cache(); st.rerun()
                 if st.download_button("📥 TẢI BACKUP", data=generate_full_backup(), file_name=f"Backup_ERP_{get_vn_time().strftime('%d%m%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True): pass
