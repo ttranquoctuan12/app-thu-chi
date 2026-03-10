@@ -11,10 +11,9 @@ import unicodedata
 import pytz
 import random
 import string
-import difflib
 
 # ==============================================================================
-# 1. CẤU HÌNH & CSS
+# 1. CẤU HÌNH & CSS 
 # ==============================================================================
 st.set_page_config(page_title="HỆ THỐNG ERP PRO", page_icon="🏢", layout="wide", initial_sidebar_state="collapsed")
 
@@ -64,7 +63,6 @@ def remove_accents(input_str):
     return "".join([c for c in s if unicodedata.category(c) != 'Mn']).replace("đ", "d").replace("Đ", "D")
 
 def auto_capitalize(text):
-    # Fix: Không tự động viết hoa nếu nội dung là Link web
     if not text or not str(text).strip(): return ""
     text = str(text).strip()
     if text.lower().startswith(("http", "www")): return text
@@ -202,7 +200,7 @@ def update_material_row(row_idx, qty, price, note, link_ncc):
     sheet.update_cell(int(row_idx), 8, price)
     sheet.update_cell(int(row_idx), 9, float(qty) * float(price))
     sheet.update_cell(int(row_idx), 10, auto_capitalize(note))
-    sheet.update_cell(int(row_idx), 11, link_ncc) # Sửa thêm Link
+    sheet.update_cell(int(row_idx), 11, link_ncc)
     clear_data_cache()
 
 def update_master_material(row_idx, name, u1, u2, ratio, price):
@@ -285,27 +283,38 @@ def export_project_materials_excel(df_proj, proj_name):
         f_tot_v = wb.add_format({'bold': True, 'border': 1, 'bg_color': '#FFCC00', 'num_format': '#,##0', 'valign': 'vcenter', 'font_name': fn, 'font_size': 12})
         
         ws = wb.add_worksheet("BangKe")
-        ws.merge_range('A1:H1', "BẢNG KÊ VẬT TƯ", f_title)
-        ws.merge_range('A2:H2', f"Dự án: {proj_name}", f_sub)
-        ws.merge_range('A3:H3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", f_sub)
-        ws.merge_range('A4:H4', "HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN", f_sys)
-        ws.merge_range('A5:H5', "Người tạo: TUẤN VDS.HCM", f_sub)
         
-        cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền", "Link/NCC"]
+        # SỬA CHIỀU RỘNG MERGE RANGE TỪ H1 -> I1 ĐỂ BAO GỒM CỘT GHI CHÚ
+        ws.merge_range('A1:I1', "BẢNG KÊ VẬT TƯ", f_title)
+        ws.merge_range('A2:I2', f"Dự án: {proj_name}", f_sub)
+        ws.merge_range('A3:I3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", f_sub)
+        ws.merge_range('A4:I4', "HỆ THỐNG QUẢN LÝ VẬT TƯ DỰ ÁN", f_sys)
+        ws.merge_range('A5:I5', "Người tạo: TUẤN VDS.HCM", f_sub)
+        
+        # BỔ SUNG CỘT GHI CHÚ VÀO FILE EXCEL
+        cols = ["STT", "Mã VT", "Tên VT", "ĐVT", "SL", "Đơn giá", "Thành tiền", "Ghi chú", "Link/NCC"]
         for i, h in enumerate(cols): ws.write(5, i, h, f_head)
-        ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15); ws.set_column('H:H', 30)
+        ws.set_column('B:B', 15); ws.set_column('C:C', 40); ws.set_column('E:G', 15); ws.set_column('H:I', 30)
         
         df_c = df_proj.reset_index(drop=True)
         tot = 0
         for i, r in df_c.iterrows():
-            ws.write(6+i, 0, i+1, f_cell); ws.write(6+i, 1, r['MaVT'], f_cell)
-            ws.write(6+i, 2, r['TenVT'], f_cell); ws.write(6+i, 3, r['DVT'], f_cell)
-            ws.write(6+i, 4, r['SoLuong'], f_cell); ws.write(6+i, 5, r['DonGia'], f_num)
-            ws.write(6+i, 6, r['ThanhTien'], f_num); ws.write(6+i, 7, r.get('LinkNCC', ''), f_cell)
-            tot += r['ThanhTien']
+            ws.write(6+i, 0, i+1, f_cell)
+            ws.write(6+i, 1, str(r.get('MaVT', '')), f_cell)
+            ws.write(6+i, 2, str(r.get('TenVT', '')), f_cell)
+            ws.write(6+i, 3, str(r.get('DVT', '')), f_cell)
+            ws.write(6+i, 4, r.get('SoLuong', 0), f_cell)
+            ws.write(6+i, 5, r.get('DonGia', 0), f_num)
+            ws.write(6+i, 6, r.get('ThanhTien', 0), f_num)
+            ws.write(6+i, 7, str(r.get('GhiChu', '')), f_cell) # Export Ghi chú
+            ws.write(6+i, 8, str(r.get('LinkNCC', '')), f_cell) # Export Link
+            tot += r.get('ThanhTien', 0)
             
         lr = 6 + len(df_c)
-        ws.merge_range(lr, 0, lr, 5, "TỔNG CỘNG", f_tot_l); ws.write(lr, 6, tot, f_tot_v)
+        ws.merge_range(lr, 0, lr, 5, "TỔNG CỘNG", f_tot_l)
+        ws.write(lr, 6, tot, f_tot_v)
+        ws.write(lr, 7, "", f_tot_l)
+        ws.write(lr, 8, "", f_tot_l)
     return output.getvalue()
 
 def process_report_data(df, start_date=None, end_date=None):
@@ -530,7 +539,6 @@ def render_vattu_module(is_laptop):
                     input_price = col_p.number_input("Đơn giá (VNĐ)", min_value=0, value=suggested_price, step=1000, format="%d")
                     if input_price: col_p.caption(f"💰 **{format_vnd(input_price)} VNĐ**")
                     
-                    # Nâng cấp layout Ghi chú & Link tràn viền
                     note = st.text_input("Ghi chú (Tùy chọn)")
                     link_ncc = st.text_input("Link/Nhà Cung Cấp (Tùy chọn)")
                     
@@ -546,7 +554,6 @@ def render_vattu_module(is_laptop):
         for i, r in data_frame.iterrows():
             c1, c2, c3, c4 = st.columns([4, 1.5, 2.5, 2])
             
-            # --- LOGIC THU GỌN VÀ HIỂN THỊ LINK THÔNG MINH (Không phân biệt hoa/thường) ---
             sub_info = [f"ĐVT: <b>{r['DVT']}</b>"]
             
             note_str = str(r.get('GhiChu', '')).strip()
@@ -601,7 +608,7 @@ def render_vattu_module(is_laptop):
                         
                         c3, c4 = st.columns(2)
                         nn = c3.text_input("Ghi chú:", value=str(re.get('GhiChu', '')))
-                        nl = c4.text_input("Link/Nhà Cung Cấp:", value=str(re.get('LinkNCC', ''))) # CẬP NHẬT: THÊM Ô SỬA LINK VÀO ĐÂY
+                        nl = c4.text_input("Link/Nhà Cung Cấp:", value=str(re.get('LinkNCC', '')))
                         
                         col_b1, col_b2 = st.columns(2)
                         with col_b1:
@@ -667,8 +674,18 @@ def render_vattu_module(is_laptop):
         if not df_pj.empty:
             xp = st.selectbox("Dự án xuất:", ["TẤT CẢ"] + df_pj['TenDuAn'].unique().tolist())
             if st.button("TẢI EXCEL KÊ VẬT TƯ"):
-                data = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({'SoLuong':'sum','ThanhTien':'sum'}) if xp == "TẤT CẢ" else df_pj[df_pj['TenDuAn'] == xp]
-                st.download_button("DOWNLOAD FILE", export_project_materials_excel(data, xp), f"VatTu_{xp}.xlsx")
+                if xp == "TẤT CẢ":
+                    data = df_pj.groupby(['MaVT','TenVT','DVT'], as_index=False).agg({
+                        'SoLuong':'sum', 'ThanhTien':'sum',
+                        'GhiChu': lambda x: ' | '.join(set(x.dropna().astype(str))),
+                        'LinkNCC': lambda x: ' | '.join(set(x.dropna().astype(str)))
+                    })
+                    data['DonGia'] = data.apply(lambda x: x['ThanhTien']/x['SoLuong'] if x['SoLuong']>0 else 0, axis=1)
+                else:
+                    data = df_pj[df_pj['TenDuAn'] == xp]
+                
+                fname = f"Vật_tư_{xp}_{get_vn_time().strftime('%d-%m-%Y_%Hh%M')}.xlsx"
+                st.download_button("DOWNLOAD FILE", export_project_materials_excel(data, xp), fname)
 
     if is_laptop and st.session_state.role == 'admin':
         c1, c2 = st.columns([4, 6]) 
