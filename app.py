@@ -178,7 +178,12 @@ def load_project_data():
         return df
     except: return pd.DataFrame()
 
-# --- WRITE FUNCTIONS ---
+# --- WRITE FUNCTIONS & HOTFIXES ---
+def update_password(role, new_pwd):
+    key = 'admin_pwd' if role == 'admin' else 'viewer_pwd'
+    update_config_value(key, new_pwd)
+    clear_data_cache()
+
 def add_transaction(date, category, amount, description, image_link):
     client = get_gs_client(); client.open("QuanLyThuChi").worksheet("data").append_row([date.strftime('%Y-%m-%d'), category, amount, auto_capitalize(description), image_link])
     clear_data_cache()
@@ -194,6 +199,9 @@ def update_transaction(row_idx, date, category, amount, description, image_link)
 
 def delete_transaction(sheet_name, row_idx):
     get_gs_client().open("QuanLyThuChi").worksheet(sheet_name).delete_rows(int(row_idx)); clear_data_cache()
+
+def delete_material_row(row_idx):
+    delete_transaction("data_duan", row_idx)
 
 def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, user_input_price, selected_unit, qty, note, link_ncc, is_new_item=False):
     wb = get_gs_client().open("QuanLyThuChi")
@@ -218,7 +226,6 @@ def save_project_material(proj_code, proj_name, mat_name, unit1, unit2, ratio, u
     try: ws_data = wb.worksheet("data_duan")
     except: ws_data = wb.add_worksheet("data_duan", 1000, 11); ws_data.append_row(["MaDuAn", "TenDuAn", "NgayNhap", "MaVT", "TenVT", "DVT", "SoLuong", "DonGia", "ThanhTien", "GhiChu", "LinkNCC"])
     
-    # TỰ ĐỘNG MỞ RỘNG CỘT TRÁNH LỖI OUT OF BOUNDS
     if ws_data.col_count < 11: ws_data.add_cols(11 - ws_data.col_count)
     headers = ws_data.row_values(1)
     if len(headers) < 11: ws_data.update_cell(1, 11, "LinkNCC")
@@ -231,7 +238,6 @@ def update_material_row(row_idx, qty, price, note, link_ncc):
     final_note, final_link = clean_note_and_link(note, link_ncc)
     sheet = get_gs_client().open("QuanLyThuChi").worksheet("data_duan")
     
-    # TỰ ĐỘNG MỞ RỘNG CỘT TRÁNH LỖI KHI CẬP NHẬT DỮ LIỆU CŨ
     if sheet.col_count < 11:
         sheet.add_cols(11 - sheet.col_count)
         sheet.update_cell(1, 11, "LinkNCC")
@@ -324,6 +330,7 @@ def export_project_materials_excel(df_proj, proj_name):
         f_link = wb.add_format({'border': 1, 'valign': 'vcenter', 'font_size': 11, 'font_name': fn, 'font_color': 'blue', 'underline': True})
         
         ws = wb.add_worksheet("BangKe")
+        
         ws.merge_range('A1:I1', "BẢNG KÊ VẬT TƯ", f_title)
         ws.merge_range('A2:I2', f"Dự án: {proj_name}", f_sub)
         ws.merge_range('A3:I3', f"Xuất lúc: {get_vn_time().strftime('%H:%M %d/%m/%Y')}", f_sub)
